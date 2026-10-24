@@ -571,6 +571,70 @@ function hkFootprintHeight(block) {
   }
 }
 
+// Commercial storey used by the Central curtain wall. Podium height is a whole number of these
+// storeys. Part heights always sum to the LandsD extrusion; a null height stays null.
+const HK_CURTAIN_STOREY = 3.9;
+
+function hkMassingPlan(block) {
+  const height = hkFootprintHeight(block);
+  if (!(height > 0)) return null;
+  const span = Math.min(block.maxX - block.minX, block.maxZ - block.minZ);
+  const long = Math.max(block.maxX - block.minX, block.maxZ - block.minZ);
+  const id = block.id | 0;
+  const podiumStoreys = 4 + (id % 3);
+  const podiumH = podiumStoreys * HK_CURTAIN_STOREY;
+  const setback = 0.74 + (id % 4) * 0.03;
+  const glass = (role) => (role === 'podium' || (role === 'shaft' && height < 32)) ? 'podium' : `tower${id % 3}`;
+  const supportsTower = height >= 52
+    && span >= 26
+    && long >= 34
+    && height - podiumH >= HK_CURTAIN_STOREY * 4
+    && span * setback >= 16;
+  if (!supportsTower) {
+    return {
+      height,
+      parts: [{ role: 'shaft', scale: 1, y0: 0, h: height, style: glass('shaft') }]
+    };
+  }
+  return {
+    height,
+    parts: [
+      { role: 'podium', scale: 1, y0: 0, h: podiumH, style: 'podium' },
+      { role: 'tower', scale: setback, y0: podiumH, h: height - podiumH, style: glass('tower') }
+    ]
+  };
+}
+
+function hkScaleRing(pts, scale) {
+  if (!(scale < 1) || !pts || pts.length < 3) return pts;
+  let twiceArea = 0;
+  let cx = 0;
+  let cz = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const cross = pts[j].x * pts[i].z - pts[i].x * pts[j].z;
+    twiceArea += cross;
+    cx += (pts[j].x + pts[i].x) * cross;
+    cz += (pts[j].z + pts[i].z) * cross;
+  }
+  if (Math.abs(twiceArea) < 1e-3) {
+    cx = 0;
+    cz = 0;
+    for (const p of pts) {
+      cx += p.x;
+      cz += p.z;
+    }
+    cx /= pts.length;
+    cz /= pts.length;
+  } else {
+    cx /= 3 * twiceArea;
+    cz /= 3 * twiceArea;
+  }
+  return pts.map((p) => ({
+    x: cx + (p.x - cx) * scale,
+    z: cz + (p.z - cz) * scale
+  }));
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Blocks: every real curb island (raised sidewalk slab) with its lot rectangles inside the property line
 //   poly: curb outline [{x, z}], rects: [[x0, x1, z0, z1], ...] building lots (axis-aligned; one for a grid block),
@@ -650,6 +714,207 @@ function blocksInRect(minX, maxX, minZ, maxZ) {
     }
   }
   return [...out];
+}
+
+// Central shop copy and bilingual street plates. Placed only on extruded frontages inside HK_CORE_WORLD.
+const HK_SHOP_SIGNS = Object.freeze([
+  { kind: 'fascia', text: '恒生銀行', bg: '#b11226', fg: '#ffe08a' },
+  { kind: 'fascia', text: '周大福', bg: '#6e1020', fg: '#f6e2a8' },
+  { kind: 'fascia', text: '六福珠寶', bg: '#140e0c', fg: '#f3e6c0' },
+  { kind: 'fascia', text: '萬寧', bg: '#0c6b3c', fg: '#f4fff8' },
+  { kind: 'fascia', text: '屈臣氏', bg: '#0d5c45', fg: '#e7fff6' },
+  { kind: 'fascia', text: '惠康', bg: '#d01920', fg: '#ffffff' },
+  { kind: 'fascia', text: '茶餐廳', bg: '#f0d34a', fg: '#1c1408' },
+  { kind: 'fascia', text: '參茸藥材', bg: '#6a1c14', fg: '#f0d090' },
+  { kind: 'fascia', text: '鐘錶行', bg: '#10243f', fg: '#d5e4ff' },
+  { kind: 'fascia', text: '找換店', bg: '#0e3c34', fg: '#b6ffe4' },
+  { kind: 'fascia', text: '電子廣場', bg: '#07111f', fg: '#3de4ff' },
+  { kind: 'fascia', text: '中環酒樓', bg: '#8a1d2c', fg: '#ffd27a' },
+  { kind: 'blade', text: '恒生', bg: '#c4162a', fg: '#ffe7a0' },
+  { kind: 'blade', text: '金舖', bg: '#1a1208', fg: '#ffd56a' },
+  { kind: 'blade', text: '藥材', bg: '#5c1812', fg: '#f2d2a0' },
+  { kind: 'blade', text: '茶居', bg: '#e8c43a', fg: '#24180a' },
+  { kind: 'blade', text: '鐘錶', bg: '#0c1c34', fg: '#d7e8ff' },
+  { kind: 'blade', text: '珠寶', bg: '#2a0a22', fg: '#ffd0ea' },
+  { kind: 'blade', text: '酒樓', bg: '#7a1828', fg: '#ffe0a0' },
+  { kind: 'blade', text: '找換', bg: '#083830', fg: '#b8ffe6' }
+]);
+const HK_FASCIA_SIGNS = HK_SHOP_SIGNS.filter((sign) => sign.kind === 'fascia');
+const HK_BLADE_SIGNS = HK_SHOP_SIGNS.filter((sign) => sign.kind === 'blade');
+const HK_STREET_PLATES = new Map([
+  ['DES VOEUX ROAD CENTRAL', '德輔道中'],
+  ["QUEEN'S ROAD CENTRAL", '皇后大道中'],
+  ["QUEEN'S ROAD WEST", '皇后大道西'],
+  ['CONNAUGHT ROAD CENTRAL', '干諾道中'],
+  ['CONNAUGHT ROAD WEST', '干諾道西'],
+  ['CHATER ROAD', '遮打道'],
+  ['PEDDER STREET', '畢打街'],
+  ['ICE HOUSE STREET', '雪廠街'],
+  ['WELLINGTON STREET', '威靈頓街'],
+  ['HOLLYWOOD ROAD', '荷李活道'],
+  ['QUEENSWAY', '金鐘道'],
+  ['GARDEN ROAD', '花園道'],
+  ['WYNDHAM STREET', '雲咸街'],
+  ["D'AGUILAR STREET", '德己立街'],
+  ['POTTINGER STREET', '砵甸乍街'],
+  ['STANLEY STREET', '士丹利街'],
+  ['WING LOK STREET', '永樂街'],
+  ['BONHAM STRAND', '文咸東街'],
+  ['QUEEN VICTORIA STREET', '域多利皇后街'],
+  ['HARCOURT ROAD', '夏慤道'],
+  ['COTTON TREE DRIVE', '紅棉路'],
+  ['LYNDHURST TERRACE', '擺花街'],
+  ['GAGE STREET', '結志街'],
+  ['COCHRANE STREET', '閣麟街'],
+  ['GRAHAM STREET', '嘉咸街'],
+  ['ELGIN STREET', '伊利近街'],
+  ['STAUNTON STREET', '士丹頓街'],
+  ['PEEL STREET', '卑利街'],
+  ['ABERDEEN STREET', '鴨巴甸街'],
+  ['JUBILEE STREET', '租庇利街'],
+  ['FINANCE STREET', '金融街'],
+  ['MAN CHEUNG STREET', '民祥街'],
+  ['EDINBURGH PLACE', '愛丁堡廣場'],
+  ['LUNG WO ROAD', '龍和道'],
+  ['TIM WA AVENUE', '添華道']
+]);
+
+function hkSignHash(x, z, salt) {
+  const s = Math.sin(x * 12.9898 + z * 78.233 + salt * 19.19) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function hkPlateEnglish(raw) {
+  return raw
+    .replace(' ROAD CENTRAL', ' RD C')
+    .replace(' ROAD WEST', ' RD W')
+    .replace(' ROAD', ' RD')
+    .replace(' STREET', ' ST')
+    .replace(' TERRACE', ' TERR')
+    .replace(' AVENUE', ' AVE')
+    .replace(' DRIVE', ' DR')
+    .replace(' PLACE', ' PL');
+}
+
+function hkCentralSignSites() {
+  const core = HK_CORE_WORLD;
+  const inCore = (x, z) => x >= core.minX && x <= core.maxX && z >= core.minZ && z <= core.maxZ;
+  const occupied = new Set();
+  const claim = (x, z) => {
+    const key = `${Math.round(x / 5)}:${Math.round(z / 5)}`;
+    if (occupied.has(key)) return false;
+    occupied.add(key);
+    return true;
+  };
+  const frontage = (x, z, nx, nz, side, half) => {
+    let sidewalk = half + 0.45;
+    for (const extra of [0.8, 2.2, 4.0, 6.5, 9]) {
+      const off = half + extra;
+      const sx = x + nx * side * off;
+      const sz = z + nz * side * off;
+      if (!inCore(sx, sz)) continue;
+      const block = blockAt(sx, sz);
+      if (!block || block.park > 0.6 || block.median || !blockInHkCore(block)) {
+        sidewalk = off;
+        continue;
+      }
+      const height = hkFootprintHeight(block);
+      if (!(height > 4.5)) continue;
+      return { block, height, off: sidewalk };
+    }
+    return null;
+  };
+  const sites = [];
+  const plateRoads = [];
+  const namedRoads = [];
+  const otherRoads = [];
+  for (const road of ROADS) {
+    if (road.highway) continue;
+    if (HK_STREET_PLATES.has(road.raw)) plateRoads.push(road);
+    else if (road.raw) namedRoads.push(road);
+    else otherRoads.push(road);
+  }
+  const pushSite = (site) => {
+    if (sites.length >= 3600) return false;
+    if (!claim(site.x, site.z)) return false;
+    sites.push(site);
+    return true;
+  };
+  const walk = (roads, spacing, place) => {
+    for (const road of roads) {
+      if (sites.length >= 3600) return;
+      const pts = road.pts;
+      const half = Math.max(3.2, (road.w || 7.5) * 0.5);
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const len = Math.hypot(dx, dz);
+        if (len < spacing) continue;
+        const nx = -dz / len;
+        const nz = dx / len;
+        const count = Math.floor(len / spacing);
+        for (let s = 0; s < count; s++) {
+          if (sites.length >= 3600) return;
+          const t = (s + 0.5) / count;
+          const x = a.x + dx * t;
+          const z = a.z + dz * t;
+          if (!inCore(x, z)) continue;
+          for (const side of [1, -1]) {
+            const hit = frontage(x, z, nx, nz, side, half);
+            if (!hit) continue;
+            const sx = x + nx * side * hit.off;
+            const sz = z + nz * side * hit.off;
+            if (!inCore(sx, sz)) continue;
+            place({ road, x: sx, y: 0, z: sz, nx, nz, side, dx, dz, len, height: hit.height, along: s });
+          }
+        }
+      }
+    }
+  };
+  walk(plateRoads, 78, (at) => {
+    if (at.side < 0) return;
+    const label = HK_STREET_PLATES.get(at.road.raw);
+    const hash = hkSignHash(at.x, at.z, 2);
+    const y = Math.min(5.6 + hash * 0.4, at.height - 0.8);
+    if (!(y > 3)) return;
+    const rotY = Math.atan2(-at.nx * at.side, -at.nz * at.side);
+    pushSite({
+      kind: 'plate',
+      text: label,
+      sub: hkPlateEnglish(at.road.raw),
+      bg: '#f4f1e8',
+      fg: '#1b1b1b',
+      x: at.x,
+      y,
+      z: at.z,
+      rotY,
+      w: 3.4,
+      h: 1.15
+    });
+  });
+  walk(plateRoads.concat(namedRoads, otherRoads), 16, (at) => {
+    const hash = hkSignHash(at.x, at.z, 5);
+    const blade = hash > 0.46 && at.height >= 9;
+    const copy = blade
+      ? HK_BLADE_SIGNS[Math.floor(hkSignHash(at.x, at.z, 11) * HK_BLADE_SIGNS.length) % HK_BLADE_SIGNS.length]
+      : HK_FASCIA_SIGNS[Math.floor(hkSignHash(at.x, at.z, 9) * HK_FASCIA_SIGNS.length) % HK_FASCIA_SIGNS.length];
+    const rotY = blade
+      ? Math.atan2(at.dx / at.len, at.dz / at.len)
+      : Math.atan2(-at.nx * at.side, -at.nz * at.side);
+    if (blade) {
+      const h = Math.min(6.8, Math.max(3.6, at.height * 0.42));
+      const y = Math.min(4.6 + hash * 5.5, at.height - h * 0.5 - 0.35);
+      if (y < h * 0.5 + 2.4) return;
+      pushSite({ ...copy, x: at.x, y, z: at.z, rotY, w: 1.15, h });
+      return;
+    }
+    const y = 3.25 + (hash % 0.35);
+    if (y + 0.6 > at.height) return;
+    pushSite({ ...copy, x: at.x, y, z: at.z, rotY, w: 4.8 + hash * 2.2, h: 1.05 });
+  });
+  return sites;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -927,6 +1192,9 @@ export {
   HK_NULL_HEIGHT,
   blockInHkCore,
   hkFootprintHeight,
+  hkMassingPlan,
+  hkScaleRing,
+  hkCentralSignSites,
   CUT_Z,
   SIGNAL_TIMING,
   streetZ,
