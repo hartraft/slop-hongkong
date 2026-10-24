@@ -14,12 +14,21 @@ import { gltfInStreetChase, hk80GridToWgs84, hk80ToWorld } from './hk-gltf-frame
 // Z-up, local X east, local Y north, local Z = HKPD. config.json model_transform
 // is a row-major 4×4 that adds the HK1980 origin. The page then uses the same
 // HK1980 → Central ENU path as the LandsD sheets.
-// The mesh is one continuous surface per tile, not a building. It stays off
-// unless the page is opened with ?pland=donor or ?pland=compare.
+// The mesh is one continuous surface per tile, not a building. The clip is the
+// Digit1 corridor, so the page mounts it as a donor unless ?pland=off (or an
+// unknown value). ?pland=compare still leaves the LandsD meshes unmounted.
 
 export const PLAND_TILES_API = 'https://pdmap.pland.gov.hk/plandapi/Tiles';
 export const PLAND_DATASET = 'https://data.gov.hk/en-data/dataset/hk-pland-pland1-3d-photo-realistic-model';
 export const PLAND_ATTRIBUTION = '© 香港特別行政區政府規劃署 3D Photo-realistic Model / DATA.GOV.HK';
+// The capture JPEGs are 8192². Eight of those, plus mipmaps, killed the WebGPU
+// device (GPU process exit 9) before the Digit1 eye could present. The page
+// uploads this edge. The mesh triangles stay the corridor clip.
+export const PLAND_PAGE_TEX_EDGE = 2048;
+// Street-side apron in front of a loaded LandsD box. The 2017 shell can sit
+// proud of The Henderson and paint a pale face over the photograph. Interior
+// triangles stay, so an atlas hole can still show the aerial surface.
+export const PLAND_LANDSD_SKIRT = 16;
 export const PLAND_CAPTURE = 'Hong Kong Island aerial photographs, March 2017; tile files dated February 2019';
 
 // Metres above the sidewalk. Triangles entirely below this are the road carpet.
@@ -468,6 +477,36 @@ export function clipPlandObjText(text, options) {
   return clipper.finish();
 }
 
+export function plandYieldsToLandsd(point, boxes, {
+  eye = HK_STREET_EYE,
+  skirt = PLAND_LANDSD_SKIRT,
+  sidewalk = ISLAND_BOUNDS.sidewalkHeight
+} = {}) {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.z)) return false;
+  for (const box of boxes || []) {
+    if (!box || !Number.isFinite(box.minX) || !Number.isFinite(box.maxX) || !Number.isFinite(box.minZ) || !Number.isFinite(box.maxZ)) {
+      continue;
+    }
+    if (Number.isFinite(point.y) && Number.isFinite(box.maxH) && Number.isFinite(box.minH)) {
+      const top = sidewalk + Math.max(0, box.maxH - box.minH) + 2;
+      if (point.y > top) continue;
+    }
+    const cx = Math.max(box.minX, Math.min(point.x, box.maxX));
+    const cz = Math.max(box.minZ, Math.min(point.z, box.maxZ));
+    const outX = point.x - cx;
+    const outZ = point.z - cz;
+    const outLen = Math.hypot(outX, outZ);
+    if (!(outLen > 0.05) || outLen > skirt) continue;
+    const ex = eye.x - cx;
+    const ez = eye.z - cz;
+    const eyeLen = Math.hypot(ex, ez);
+    if (!(eyeLen > 1)) continue;
+    const dot = (outX * ex + outZ * ez) / (outLen * eyeLen);
+    if (dot > 0.5) return true;
+  }
+  return false;
+}
+
 export function resolvePlandRequest(href) {
   let raw = '';
   try {
@@ -477,22 +516,78 @@ export function resolvePlandRequest(href) {
   }
   const query = raw.trim().toLowerCase();
   switch (query) {
+    // No flag: donor on the Digit1 clip. The chase URLs do not carry ?pland=donor.
     case '':
+    case '1':
+    case 'on':
+    case 'donor':
+      return { mode: 'donor' };
     case '0':
     case 'off':
     case 'false':
     case 'no':
       return null;
-    case '1':
-    case 'on':
-    case 'donor':
-      return { mode: 'donor' };
     case 'compare':
     case 'ab':
       return { mode: 'compare' };
     default:
       return null;
   }
+}
+
+// Curtain only. The retail shopfront is a separate mesh and must not be passed
+// here. Samples inside the Digit1 chase corridor are dropped so the 2017 photo
+// mass is not hidden behind hkCanyonGlass. The 80 m disc is not this test, and
+// a ribbon outside the corridor keeps its glass. Shopfront cells stay on the
+// caller’s other list, including the proven-empty Des Voeux curb.
+export function omitPlandCorridorGlass(walls, {
+  enabled = false,
+  eye = HK_STREET_EYE,
+  sample = 4,
+  minLen = 3.2
+} = {}) {
+  const list = walls || [];
+  if (!enabled) return list.slice();
+  const out = [];
+  for (const wall of list) {
+    if (!wall || !Number.isFinite(wall.dx) || !Number.isFinite(wall.dz) || !(wall.len > 0)) {
+      if (wall) out.push(wall);
+      continue;
+    }
+    const half = wall.len * 0.5;
+    const steps = Math.max(1, Math.ceil(wall.len / sample));
+    const dt = wall.len / steps;
+    const inside = [];
+    for (let i = 0; i < steps; i++) {
+      const t = -half + (i + 0.5) * dt;
+      const x = wall.x + wall.dx * t;
+      const z = wall.z + wall.dz * t;
+      inside.push(gltfInStreetChase({ minX: x, maxX: x, minZ: z, maxZ: z }, eye));
+    }
+    let i = 0;
+    while (i < steps) {
+      if (inside[i]) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < steps && !inside[j]) j++;
+      const t0 = -half + i * dt;
+      const t1 = -half + j * dt;
+      const len = t1 - t0;
+      if (len >= minLen) {
+        const mid = (t0 + t1) * 0.5;
+        out.push({
+          ...wall,
+          x: wall.x + wall.dx * mid,
+          z: wall.z + wall.dz * mid,
+          len
+        });
+      }
+      i = j;
+    }
+  }
+  return out;
 }
 
 export function planPlandManifest(manifest, request) {

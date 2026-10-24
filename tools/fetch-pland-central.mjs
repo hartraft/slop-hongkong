@@ -18,6 +18,7 @@ import {
   PLAND_ATTRIBUTION,
   PLAND_CAPTURE,
   PLAND_DATASET,
+  PLAND_PAGE_TEX_EDGE,
   PLAND_TILES_API,
   assertPlandFileType,
   createPlandObjClipper,
@@ -58,7 +59,7 @@ function help() {
   return `Usage: node tools/fetch-pland-central.mjs [--format OBJ|OSGB|CESIUM] [--tiles tile_21_26,tile_22_26] [--out hk-3d/pland]
 
 Queries ${PLAND_TILES_API} at the Digit1 corridor (Des Voeux eye, then every 125 m along heading 1.29).
-OBJ zips are clipped to that corridor and written as glTF the page loads with ?pland=donor or ?pland=compare.
+OBJ zips are clipped to that corridor and written as glTF the page loads by default. ?pland=off leaves it unmounted. ?pland=compare is the A-B.
 OSGB and CESIUM zips are downloaded only. The page does not load them.
 hk-3d/ is gitignored. A missing manifest leaves LandsD individualised meshes as they are.`;
 }
@@ -88,6 +89,21 @@ function extractEntry(zipPath, entry, dest) {
   mkdirSync(dest, { recursive: true });
   const result = spawnSync('unzip', ['-q', '-o', '-j', '-d', dest, zipPath, entry], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(result.stderr || `unzip failed for ${entry}`);
+}
+
+// The zip JPEG is 8192². The page file is a box-filter of that image at
+// PLAND_PAGE_TEX_EDGE so eight tiles do not kill the WebGPU device.
+function capPlandJpeg(file, maxEdge = PLAND_PAGE_TEX_EDGE) {
+  const tmp = `${file}.cap.jpg`;
+  const result = spawnSync('ffmpeg', [
+    '-y', '-loglevel', 'error', '-i', file,
+    '-vf', `scale='min(${maxEdge},iw)':-2`,
+    '-q:v', '3', tmp
+  ], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr || `ffmpeg failed for ${file}`);
+  rmSync(file, { force: true });
+  const renamed = spawnSync('mv', [tmp, file], { encoding: 'utf8' });
+  if (renamed.status !== 0) throw new Error(renamed.stderr || `mv failed for ${file}`);
 }
 
 function directTile(grid, fileType) {
@@ -283,6 +299,7 @@ async function clipTile(tile, zipPath, streetHkpd, outDir) {
     const entry = entries.find((item) => item.endsWith(`/${file}`) || item.endsWith(file));
     if (!entry) throw new Error(`${tile.grid} missing texture ${file}`);
     extractEntry(zipPath, entry, tileDir);
+    capPlandJpeg(path.join(tileDir, path.basename(file)));
     imageByMaterial[name] = path.basename(file);
   }
   const primitives = writeCorridorGltf(tileDir, clip, imageByMaterial);
@@ -369,7 +386,7 @@ async function main() {
   };
   writeFileSync(path.join(opts.out, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`[pland] wrote ${path.join(opts.out, 'manifest.json')}`);
-  console.log('[pland] open index.html?pland=donor&at=-1.4,29.3,1.29');
+  console.log('[pland] open index.html?at=-1.4,29.3,1.29');
   console.log('[pland] A-B the same cameras with index.html?pland=compare&at=-1.4,29.3,1.29');
   if (!opts.keepZip) {
     for (const item of zips) rmSync(item.zipPath, { force: true });
