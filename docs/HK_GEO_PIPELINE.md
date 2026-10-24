@@ -165,6 +165,7 @@ The module matches the NYC `GEO` keys. Empty `streets`, `avenues`, `broadway`, `
 ```bash
 # Writes js/hk-geodata.js. Without the gitignored extracts this is the seven-block sample.
 # With landsd-*.geojson and osm_*.json present it rewrites the full module. Do not commit the sample over it.
+# tests/hk-geo.test.mjs rejects that file: blocks.length > 10000, size > 5 MB, roads and graph nodes above the sample.
 GEO_CITY=hk node tools/build-geodata.mjs
 
 # Harbour stage alone (same coast resolution as the build).

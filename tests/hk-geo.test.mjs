@@ -260,6 +260,19 @@ test('GEO_CITY=hk writes harbour geodata and leaves nyc-geodata alone', async ()
   fs.rmSync(empty, { recursive: true, force: true });
 });
 
+test('committed hk-geodata.js stays the full Island + Kowloon extract', async () => {
+  // A rebuild without the gitignored LandsD/OSM extracts writes the Statue Square sample
+  // (7 blocks, 5 roads, 8 graph nodes, about 28 KB) and must not stay green.
+  const committedPath = path.join(root, 'js/hk-geodata.js');
+  const size = fs.statSync(committedPath).size;
+  assert.ok(size > 5e6, `committed hk-geodata.js is ${size} bytes; the sample rebuild is far smaller`);
+  const { GEO } = await import(pathToFileURL(committedPath).href);
+  assert.ok(GEO.blocks.length > 10000, `blocks ${GEO.blocks.length}; the Statue Square sample has 7`);
+  assert.ok(GEO.roads.length > 1000, `roads ${GEO.roads.length}; the Statue Square sample has 5`);
+  assert.ok(GEO.roadGraph.links.length > 1000, `links ${GEO.roadGraph.links.length}; the Statue Square sample has 5`);
+  assert.ok(GEO.roadGraph.nodes.length / 2 > 1000, `nodes ${GEO.roadGraph.nodes.length / 2}; the Statue Square sample has 8`);
+});
+
 test('resolveRuntimeCity is Hong Kong even when a query or GEO_CITY asks for New York', async () => {
   const { resolveRuntimeCity } = await import(pathToFileURL(path.join(root, 'js/geo-source.js')).href);
   assert.equal(resolveRuntimeCity({}, ''), 'hk');
