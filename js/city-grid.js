@@ -245,7 +245,7 @@ function createExtrudedPolygonMesh(pts, bottomY, height, material, receiveShadow
 function buildHkRoadRibbons(group) {
   const mat = new THREE.MeshStandardNodeMaterial({ color: 0x2c3136, roughness: 0.92, metalness: 0.02 });
   mat.name = 'hkRoadCentreline';
-  const geos = [];
+  const segs = [];
   for (const road of ROADS) {
     const w = Math.max(6, road.w || 8);
     const pts = road.pts || [];
@@ -256,17 +256,33 @@ function buildHkRoadRibbons(group) {
       const dz = b.z - a.z;
       const len = Math.hypot(dx, dz);
       if (len < 0.4) continue;
-      const geo = new THREE.BoxGeometry(w, 0.07, len + Math.min(w * 0.35, 6));
-      geo.rotateY(Math.atan2(dx, dz));
-      geo.translate((a.x + b.x) * 0.5, 0.045, (a.z + b.z) * 0.5);
-      geos.push(geo);
+      segs.push({
+        x: (a.x + b.x) * 0.5,
+        z: (a.z + b.z) * 0.5,
+        w,
+        len: len + Math.min(w * 0.35, 6),
+        yaw: Math.atan2(dx, dz)
+      });
     }
   }
-  if (!geos.length) return;
-  const mesh = new THREE.Mesh(mergeGeometries(geos, false), mat);
+  if (!segs.length) return;
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  geo.translate(0, 0.5, 0);
+  const mesh = new THREE.InstancedMesh(geo, mat, segs.length);
   mesh.name = 'HkRoadCentrelines';
-  mesh.receiveShadow = true;
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    dummy.position.set(s.x, 0.03, s.z);
+    dummy.rotation.set(0, s.yaw, 0);
+    dummy.scale.set(s.w, 0.06, s.len);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.computeBoundingSphere();
   group.add(mesh);
+  console.info(`[roads] HK centreline segments ${segs.length}`);
 }
 
 function buildHkPierDecks(group) {
@@ -1596,7 +1612,17 @@ function buildCityGrid(scene) {
   const curbGeos = [];
   const hedgeGeos = [];
   const SW_TOP = 0.22;
-  for (const b of BLOCKS) {
+  if (GEO.frame.city === 'hk') {
+    // These blocks are building footprints, not Manhattan curb islands. Extruding
+    // every polygon is the full LandsD set and does not finish. The asphalt deck
+    // is the ground; tight boxes keep traffic off the towers.
+    for (const b of BLOCKS) {
+      if (b.park > 0.6 || b.median) continue;
+      if (b.maxX - b.minX < 0.5 || b.maxZ - b.minZ < 0.5) continue;
+      roadSidewalks.push({ minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ });
+    }
+  }
+  for (const b of GEO.frame.city === 'hk' ? [] : BLOCKS) {
     if (b.park > 0.6 && !b.median && b.parkName !== 'Bryant Park') continue; // parks build their own perimeter sidewalk (sections 7, 7B)
     if (b.rect) {
       const slab = { cx: (b.minX + b.maxX) * 0.5, cz: (b.minZ + b.maxZ) * 0.5, w: b.maxX - b.minX, d: b.maxZ - b.minZ, block: b };
@@ -1642,27 +1668,29 @@ function buildCityGrid(scene) {
   mergeInto(hedgeGeos, medianHedgeMat, true);
 
   const rectSlabs = blockSidewalks.filter((s) => !s.cover);
-  const swInstanced = new THREE.InstancedMesh(unitBox, sidewalkMat, rectSlabs.length);
-  const curbInstanced = new THREE.InstancedMesh(unitBox, curbMat, rectSlabs.length);
-  swInstanced.receiveShadow = true;
-  curbInstanced.receiveShadow = true;
-  curbInstanced.castShadow = true;
+  if (rectSlabs.length) {
+    const swInstanced = new THREE.InstancedMesh(unitBox, sidewalkMat, rectSlabs.length);
+    const curbInstanced = new THREE.InstancedMesh(unitBox, curbMat, rectSlabs.length);
+    swInstanced.receiveShadow = true;
+    curbInstanced.receiveShadow = true;
+    curbInstanced.castShadow = true;
 
-  rectSlabs.forEach((blk, i) => {
-    dummy.rotation.set(0, 0, 0);
-    dummy.position.set(blk.cx, 0.125, blk.cz);
-    dummy.scale.set(blk.w - 0.5, 0.19, blk.d - 0.5);
-    dummy.updateMatrix();
-    swInstanced.setMatrixAt(i, dummy.matrix);
+    rectSlabs.forEach((blk, i) => {
+      dummy.rotation.set(0, 0, 0);
+      dummy.position.set(blk.cx, 0.125, blk.cz);
+      dummy.scale.set(blk.w - 0.5, 0.19, blk.d - 0.5);
+      dummy.updateMatrix();
+      swInstanced.setMatrixAt(i, dummy.matrix);
 
-    dummy.position.set(blk.cx, 0.095, blk.cz);
-    dummy.scale.set(blk.w, 0.17, blk.d);
-    dummy.updateMatrix();
-    curbInstanced.setMatrixAt(i, dummy.matrix);
-  });
-  swInstanced.instanceMatrix.needsUpdate = true;
-  curbInstanced.instanceMatrix.needsUpdate = true;
-  group.add(swInstanced, curbInstanced);
+      dummy.position.set(blk.cx, 0.095, blk.cz);
+      dummy.scale.set(blk.w, 0.17, blk.d);
+      dummy.updateMatrix();
+      curbInstanced.setMatrixAt(i, dummy.matrix);
+    });
+    swInstanced.instanceMatrix.needsUpdate = true;
+    curbInstanced.instanceMatrix.needsUpdate = true;
+    group.add(swInstanced, curbInstanced);
+  }
 
   // 6. Times Square Pedestrian Plazas, Duffy Square TKTS Red Steps, Herald Square & Flatiron Plaza
   //    Curb-height light-grey granite paver plazas in Broadway's roadbed with granite benches & planters, plus the

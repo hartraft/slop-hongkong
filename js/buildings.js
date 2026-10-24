@@ -257,74 +257,72 @@ function carve(r, holes, axis = 'x') {
   return out.map(([u0, u1, v0, v1]) => (flip ? rect(v0, v1, u0, u1) : rect(u0, u1, v0, v1)));
 }
 
-// One mesh per LandsD footprint, extruded to the tuple height. The Manhattan lot filler
-// only walks rects/frames and then invents storeys, water towers and fire escapes.
+// One box per LandsD footprint, scaled to the polygon's bounding box and the tuple height.
+// Polygon extrusion of the full Island + Kowloon set does not finish. The Manhattan lot
+// filler only walks rects/frames and then invents storeys, water towers and fire escapes.
 function buildHkFootprintBlocks(scene) {
   const group = new THREE.Group();
   group.name = 'ManhattanCityBlocks';
   const colliders = [];
   const allBlocks = [];
+  const lots = [];
+  for (const b of BLOCKS) {
+    if (b.park > 0.6 || b.median) continue;
+    const w = b.maxX - b.minX;
+    const d = b.maxZ - b.minZ;
+    if (!(w >= 0.8) || !(d >= 0.8)) continue;
+    const h = typeof b.height === 'number' && b.height > 0 ? b.height : 12;
+    lots.push({ b, w, d, h });
+  }
   const mat = new THREE.MeshStandardNodeMaterial({
     color: 0xd5d0c4,
     roughness: 0.7,
     metalness: 0.06
   });
   mat.name = 'hkFootprint';
-  const geos = [];
-  const built = [];
-  for (const b of BLOCKS) {
-    if (!b.poly || b.poly.length < 3 || b.park > 0.6) continue;
-    const h = typeof b.height === 'number' && b.height > 0 ? b.height : 18;
-    let geo = null;
-    try {
-      const shape = new THREE.Shape();
-      shape.moveTo(b.poly[0].x, -b.poly[0].z);
-      for (let i = 1; i < b.poly.length; i++) shape.lineTo(b.poly[i].x, -b.poly[i].z);
-      shape.closePath();
-      geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 1 });
-      geo.rotateX(-Math.PI / 2);
-      geo.translate(0, 0.22, 0);
-    } catch {
-      geo = null;
-    }
-    if (!geo) {
-      const w = Math.max(1, b.maxX - b.minX);
-      const d = Math.max(1, b.maxZ - b.minZ);
-      geo = new THREE.BoxGeometry(w, h, d);
-      geo.translate(b.cx, 0.22 + h * 0.5, b.cz);
-    }
-    geos.push(geo);
-    colliders.push({ minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ, maxY: 0.22 + h });
-    allBlocks.push({
-      id: b.name || `hk_${b.id}`,
-      cx: b.cx,
-      cz: b.cz,
-      minX: b.minX,
-      maxX: b.maxX,
-      minZ: b.minZ,
-      maxZ: b.maxZ,
-      district: b.district || 'hk_cbd',
-      maxH: h,
-      footprints: [{ x0: b.minX, x1: b.maxX, z0: b.minZ, z1: b.maxZ, h, pts: b.poly }],
-      cornices: [],
-      waterTowers: [],
-      hvacUnits: [],
-      fireEscapes: [],
-      awnings: [],
-      scaffoldSheds: [],
-      yards: []
-    });
-    built.push(`${b.name || b.id} ${h}m`);
-  }
-  if (geos.length) {
-    const mesh = new THREE.Mesh(mergeGeometries(geos, false), mat);
+  if (lots.length) {
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    geo.translate(0, 0.5, 0);
+    const mesh = new THREE.InstancedMesh(geo, mat, lots.length);
     mesh.name = 'HkFootprints';
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < lots.length; i++) {
+      const { b, w, d, h } = lots[i];
+      dummy.position.set(b.cx, 0.22, b.cz);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(w, h, d);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+      colliders.push({ minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ, maxY: 0.22 + h });
+      allBlocks.push({
+        id: b.name || `hk_${b.id}`,
+        cx: b.cx,
+        cz: b.cz,
+        minX: b.minX,
+        maxX: b.maxX,
+        minZ: b.minZ,
+        maxZ: b.maxZ,
+        district: b.district || 'hk_cbd',
+        maxH: h,
+        footprints: [{ x0: b.minX, x1: b.maxX, z0: b.minZ, z1: b.maxZ, h }],
+        cornices: [],
+        waterTowers: [],
+        hvacUnits: [],
+        fireEscapes: [],
+        awnings: [],
+        scaffoldSheds: [],
+        yards: []
+      });
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
     group.add(mesh);
   }
   scene.add(group);
-  console.info(`[buildings] HK footprints ${built.length}: ${built.join('; ')}`);
+  const named = lots.filter((lot) => /HSBC Main Building|Prince's Building|Bank of China Building|CONNAUGHT|DES VOEUX/i.test(lot.b.name));
+  console.info(`[buildings] HK footprint boxes ${lots.length}` + (named.length ? `; ${named.map((lot) => `${lot.b.name} ${lot.h}m`).join('; ')}` : ''));
   return {
     group,
     colliders,
