@@ -50,6 +50,13 @@ test('Hong Kong boot builders do not call NYC borough, bridge, or landmark meshe
   const geodataHead = read('js/hk-geodata.js').slice(0, 800);
   assert.match(geodataHead, /hongKongIsland/);
   assert.doesNotMatch(geodataHead, /GEO\.manhattan|newJersey/);
+  const boroughsSrc = read('js/boroughs.js');
+  const ridge = boroughsSrc.slice(boroughsSrc.indexOf('const RIDGE_TABLE'), boroughsSrc.indexOf('function ridgeJitter'));
+  const guard = ridge.indexOf('if (!NJ_LAND)');
+  const indexRead = ridge.indexOf('NJ_LAND.index');
+  assert.ok(guard >= 0 && indexRead > guard, 'RIDGE_TABLE returns before reading NJ_LAND.index');
+  const height = boroughsSrc.slice(boroughsSrc.indexOf('function ridgeHeightAt'), boroughsSrc.indexOf('function buildRidgeGeometry'));
+  assert.match(height, /if \(!NJ_LAND\) return 0/);
 });
 
 test('native module entry and imports share canonical preloaded URLs on GitHub Pages', () => {

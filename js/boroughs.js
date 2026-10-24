@@ -1195,6 +1195,12 @@ const RIDGE_KEYS = [
 // Per-z table (20 m rows) of the cliff foot x, crest height, cliff width, back-slope reach and the foot's limit
 const RIDGE_TABLE = (() => {
   const step = 20;
+  // Kowloon is not a Hudson shore. With no New Jersey land the Palisades table must not touch NJ_LAND at import.
+  if (!NJ_LAND) {
+    const n = 2;
+    const zeros = () => new Float32Array(n);
+    return { step, n, x: zeros(), h: zeros(), cw: zeros(), back: zeros(), footMax: zeros() };
+  }
   const n = Math.floor((RIDGE_Z1 - RIDGE_Z0) / step) + 1;
   const ix = NJ_LAND.index;
   const zAt = (i) => RIDGE_Z0 + i * step;
@@ -1387,6 +1393,7 @@ function ridgeProfile(d, h, cw, back) {
 }
 
 function ridgeHeightAt(x, z) {
+  if (!NJ_LAND) return 0;
   if (z < RIDGE_Z0 || z > RIDGE_Z1) return 0;
   const r = ridgeParamsAt(z);
   const d = r.x - x;
@@ -1790,8 +1797,8 @@ function placeSignatureTowers(list) {
     addExclusionCircle(t.x, t.z, Math.max(t.w, t.d) * 0.75 + 6);
   }
   // Boulevard East & Palisade Ave: apartment towers lining the Palisades crest above Weehawken, West New York,
-  // Guttenberg, North Bergen, Cliffside Park and Fort Lee
-  for (let z = -10000; z < -250; z += 110 + rand() * 120) {
+  // Guttenberg, North Bergen, Cliffside Park and Fort Lee. No New Jersey shore, no crest.
+  if (NJ_LAND) for (let z = -10000; z < -250; z += 110 + rand() * 120) {
     if (rand() < 0.4 || Math.abs(z - GWB_Z) < 400) continue;
     const r = ridgeParamsAt(z);
     const x = r.x - r.cw - 25 - rand() * 60;
