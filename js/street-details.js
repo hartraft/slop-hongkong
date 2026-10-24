@@ -224,7 +224,7 @@ function buildStreetDetails(scene, gltfPlan = null) {
   const blades = neon.signs.filter((site) => site.kind === 'blade').length;
   const strips = neon.signs.filter((site) => site.kind === 'fascia').length;
   console.info(
-    `[neon] add-on boards ${blades} strips ${strips} arms ${neon.arms.length} ` +
+    `[neon] podium-belt boards ${blades} strips ${strips} arms ${neon.arms.length} ` +
     `on ${neon.walls} gap podiums (德輔道中 ${neon.desVoeux}, side ${neon.side})`
   );
   console.info(`[streetDetails] plates ${plates.length}`);

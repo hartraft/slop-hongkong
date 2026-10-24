@@ -29,7 +29,7 @@ On MSI, open the page (no query flag). Chase camera:
 ## Residual gaps
 
 - No 5 m DTM. Walls and roads are flat.
-- No neon shopfront pack. The street wall uses the existing podium curtain wall, not a shop fascia along every lot.
+- The canyon ribbon is still the ground-fill wall. Its sidewalk belt is an opaque shopfront, and Traditional Chinese neon hangs on that belt (`docs/HK_GLTF_CUT.md`).
 - Not a parcel cadastre. Where LandsD has a footprint the wall meets it. Where it does not, the wall is a 12 m canyon edge, not a surveyed lot.
 - Block interiors behind the street wall can still be the coast plate. They are not a place the carriageway looks into.
 - Junction mouths stay open for a short distance so crossing decks are not buried.

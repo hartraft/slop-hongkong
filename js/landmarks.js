@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
+  HK_RETAIL_BELT,
   ISLAND_BOUNDS,
   hkMassingPlan,
   hkPlanCorners,
@@ -137,19 +138,21 @@ function addBankOfChina(group, site, colliders, glass, brace, metal, up, dir, gr
   const fractions = [1, 0.76, 0.51, 0.33];
   const peak = 11.7;
   const mastH = 52.4;
-  const y0 = ground;
+  const ySkirt = HK_RETAIL_BELT;
+  const skirt = hkMat(0x8a8176, { metalness: 0.04, roughness: 0.9, side: THREE.DoubleSide });
   for (let step = 0; step < 4; step++) {
     const a = corners[(north + step) % 4];
     const b = corners[(north + step + 1) % 4];
     const yTop = ground + block.height * fractions[step];
     const yOuter = step === 0 ? yTop + peak : yTop;
     const yCenter = yTop;
+    addPrism(group, skirt, a, b, center, ground, ground, ground, ySkirt, ySkirt, ySkirt);
     const face = glass.clone();
     face.polygonOffset = true;
     face.polygonOffsetFactor = 1 + step;
     face.polygonOffsetUnits = 1 + step;
-    addPrism(group, face, a, b, center, y0, y0, y0, yOuter, yOuter, yCenter);
-    const yBrace0 = y0 + 12;
+    addPrism(group, face, a, b, center, ySkirt, ySkirt, ySkirt, yOuter, yOuter, yCenter);
+    const yBrace0 = ground + 12;
     const yBrace1 = yOuter - 6;
     if (yBrace1 - yBrace0 > 20) {
       addBeam(group, brace, up, dir, a.x, yBrace0, a.z, b.x, yBrace1, b.z, 1.15);
@@ -184,7 +187,7 @@ function addJardine(group, site, mat, up, ground) {
   const parts = plan ? plan.parts : [{ scale: 1, y0: 0, h: site.block.height }];
   for (const part of parts) {
     const ring = part.scale < 1 ? hkScaleRing(site.block.poly, part.scale) : site.block.poly;
-    const y0 = ground + part.y0 + 6;
+    const y0 = Math.max(ground + part.y0 + 6, HK_RETAIL_BELT + 1.2);
     const y1 = ground + part.y0 + part.h - 4;
     if (!(y1 > y0 + 6) || !ring) continue;
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {

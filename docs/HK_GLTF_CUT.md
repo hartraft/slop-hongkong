@@ -1,6 +1,6 @@
 # Individualised glTF — Central street faces
 
-Des Voeux and Statue Square use Lands Department / Open3Dhk individualised building meshes. The models are the photogrammetry export (textured glTF), not a procedural podium. Invented canyon walls are removed where one of those meshes covers the street edge. Extrudes that remain, because a sheet has no model there yet, keep an opaque shopfront for the first two storeys. Curtain glass starts above that belt. Neon is a light add-on on the gap podiums.
+Des Voeux and Statue Square use Lands Department / Open3Dhk individualised building meshes. The models are the photogrammetry export (textured glTF), not a procedural podium. Invented canyon walls are removed where one of those meshes covers the street edge. Every invented street face keeps an opaque shopfront for the first two storeys. Curtain glass starts above that belt, and it cannot paint a window below it. Dense Traditional Chinese neon hangs on the shopfront belt.
 
 © Government of the Hong Kong SAR (Lands Department) / [Open3Dhk](https://3d.map.gov.hk/).
 
@@ -31,9 +31,16 @@ That command downloads both zips and keeps every Central BUILDING glTF with span
 
 A footprint whose box overlaps a loaded mesh (intersection at least 15% of the smaller box, 2 m margin) is left out of the extrude batch. A canyon wall is cut out wherever its centreline runs through a loaded mesh (3 m margin). The pieces that remain are gap fill.
 
-Gap fill, both the canyon ribbon and the LandsD extrude, is split at `HK_RETAIL_BELT` (sidewalk + two 3.9 m storeys, world y = 8.02). Below that the material is an opaque shopfront: granite plinth to about 1.1 m, shop mouth above the plinth, fascia, then a masonry storey. It does not run a window grid down to the pavement. Glass starts at the belt. Photo materials on the glTF keep the file’s roughness and metalness. The page scales a photo map above 2048 px down to 2048 px so a block of 4K atlases can sit in the GPU; the cached JPEGs are untouched.
+Street-level glass is forced off in four places. None of them repaint a LandsD photograph.
 
-Neon boards and strips hang only on canyon faces that are still gaps, on that shopfront belt, and only as a sparse Traditional Chinese add-on. Highways get none.
+1. Geometry. Canyon ribbons and LandsD extrudes are split at `HK_RETAIL_BELT` (sidewalk + two 3.9 m storeys, world y = 8.02). The lower mesh is `HkRetailPodium`: granite plinth to about 1.2 m, a dark shop mouth above the plinth, a tile fascia. No punched window sits in that belt.
+2. Massing podium. A wide plate’s lower block (`style: 'podium'`) uses `hkPodiumMasonry`, ashlar with punched openings only above the belt. `HkCurtainWall` is only the setback tower (`tower0`–`tower2`). Tower glass therefore starts above the podium, not at the sidewalk.
+3. Shader backstop. `createCurtainWallMaterial` with `boxLocal: false` replaces colour, roughness, metalness, mullion normal, and pane emission wherever `positionWorld.y < HK_RETAIL_BELT`. A missed split still cannot draw a curtain grid to the pavement. Box-local facade tests are unchanged.
+4. Landmarks the extrude batch does not own. Bank of China prisms are stone from the sidewalk to the belt; the glass faces start at `ySkirt`. Jardine portholes start at or above the belt.
+
+Photo materials on the glTF keep the file’s roughness and metalness. The page scales a photo map above 2048 px down to 2048 px so a block of 4K atlases can sit in the GPU; the cached JPEGs are untouched.
+
+Neon boards and a second fascia row hang on canyon faces that are still gaps, on that shopfront belt (sign tops stay under y = 8.02). Des Voeux is the densest. Copy is Traditional Chinese. Highways get none. Signs are not parented to the tower glass.
 
 ## Camera
 

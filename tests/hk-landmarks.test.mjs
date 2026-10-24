@@ -90,6 +90,14 @@ test('Bank of China corners stay on its LandsD footprint and only that shaft is 
   assert.equal(hkLandmarkOwnsShaft({ name: 'Bank of China Tower', height: null }), false);
   assert.equal(hkLandmarkOwnsShaft({ name: 'HSBC Main Building', height: 177.2 }), false);
   assert.equal(HK_LANDMARK_CATALOG.filter((spec) => spec.ownsShaft).length, 1);
+  const landmarks = readFileSync(path.join(root, 'js/landmarks.js'), 'utf8');
+  const bocSrc = landmarks.slice(landmarks.indexOf('function addBankOfChina'), landmarks.indexOf('function addJardine'));
+  assert.match(bocSrc, /const ySkirt = HK_RETAIL_BELT/);
+  assert.match(bocSrc, /addPrism\(group, skirt, a, b, center, ground, ground, ground, ySkirt, ySkirt, ySkirt\)/);
+  assert.match(bocSrc, /addPrism\(group, face, a, b, center, ySkirt, ySkirt, ySkirt, yOuter, yOuter, yCenter\)/);
+  assert.doesNotMatch(bocSrc, /const y0 = ground/);
+  const jardine = landmarks.slice(landmarks.indexOf('function addJardine'), landmarks.indexOf('function addCourtDome'));
+  assert.match(jardine, /HK_RETAIL_BELT \+ 1\.2/);
 });
 
 test('boot builds Hong Kong landmarks and does not call the NYC landmark builder', () => {

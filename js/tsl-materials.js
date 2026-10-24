@@ -59,7 +59,8 @@ import {
 import {
   CENTRAL_PARK_BOUNDS,
   PLAY_BOUNDS,
-  ISLAND_BOUNDS
+  ISLAND_BOUNDS,
+  HK_RETAIL_BELT
 } from './city-config.js';
 
 // js/tsl-materials.js
@@ -615,8 +616,12 @@ function createCurtainWallMaterial(opts = {}) {
     const withBlank = mix(finalWall, panelCol.add(canyonGlow), blank);
     // Brushed-aluminium coping capping every wall
     const withCap = mix(withBlank, mix(cFrame, color(0xc9ced3), 0.45), coping);
-
-    return mix(withCap, roofColor, isRoof);
+    const curtainCol = mix(withCap, roofColor, isRoof);
+    // World-space towers cannot draw a mullion grid below the shopfront belt.
+    // Box-local facade tests keep their own ground floor.
+    if (boxLocal) return curtainCol;
+    const onPodium = float(1.0).sub(step(float(HK_RETAIL_BELT), positionWorld.y));
+    return mix(curtainCol, podiumStreetColor(), onPodium);
   })();
 
   mat.roughnessNode = Fn(() => {
@@ -625,11 +630,19 @@ function createCurtainWallMaterial(opts = {}) {
     );
     const sillDirt = float(1.0).sub(smoothstep(spandrelRatio, spandrelRatio + 0.18, cellUV.y)).mul(0.18);
     const glassOrFrame = mix(float(0.05).add(sillDirt), float(0.54), max(max(isFrame, isRoof), partial));
-    return mix(mix(glassOrFrame, float(0.36), coping), float(0.88), blank);
+    const glassRough = mix(mix(glassOrFrame, float(0.36), coping), float(0.88), blank);
+    if (boxLocal) return glassRough;
+    const onPodium = float(1.0).sub(step(float(HK_RETAIL_BELT), positionWorld.y));
+    return mix(glassRough, float(0.9), onPodium);
   })();
 
-  // Glass & metal, but the concrete lot-line walls aren't
-  mat.metalnessNode = mix(float(0.72), float(0.0), blank);
+  // Glass & metal above the belt. The shopfront is stone, not a metal curtain.
+  mat.metalnessNode = Fn(() => {
+    const glassMetal = mix(float(0.72), float(0.0), blank);
+    if (boxLocal) return glassMetal;
+    const onPodium = float(1.0).sub(step(float(HK_RETAIL_BELT), positionWorld.y));
+    return mix(glassMetal, float(0.02), onPodium);
+  })();
 
   // Hardware derivative bumpNormal for raised curtain-wall mullions & spandrel channels (ramps >= 2px, see pre-war)
   mat.normalNode = Fn(() => {
@@ -642,8 +655,10 @@ function createCurtainWallMaterial(opts = {}) {
       .mul(filteredPulse(cellUV.y, spandrelRatio + 0.01, 0.99 - mullionThickness, ramp.y))
       .mul(float(1.0).sub(partial)).mul(float(1.0).sub(coping));
     const mullionRelief = float(1.0).sub(inPane).mul(0.014).mul(float(1.0).sub(blank)).add(coping.mul(0.01));
-
-    return bumpNormal(mullionRelief.mul(detailFade));
+    const relief = mullionRelief.mul(detailFade);
+    if (boxLocal) return bumpNormal(relief);
+    const onPodium = float(1.0).sub(step(float(HK_RETAIL_BELT), positionWorld.y));
+    return bumpNormal(relief.mul(float(1.0).sub(onPodium)));
   })();
 
   mat.emissiveNode = Fn(() => {
@@ -660,11 +675,14 @@ function createCurtainWallMaterial(opts = {}) {
     const fresnel = pow(clamp(float(1.0).sub(abs(dot(viewDir, normalWorldGeometry))), 0.0, 1.0), 2.0);
     const transmission = float(1.0).sub(fresnel.mul(0.75));
 
-    return emitCol
+    const glassEmit = emitCol
       .mul(transmission)
       .mul(paneMask)
       .mul(cityUniforms.uInteriorGlow)
       .mul(0.72);
+    if (boxLocal) return glassEmit;
+    const onPodium = float(1.0).sub(step(float(HK_RETAIL_BELT), positionWorld.y));
+    return mix(glassEmit, podiumShopGlow(), onPodium);
   })();
 
   _curtainWallCache.set(cacheKey, mat);
@@ -1895,10 +1913,57 @@ function createCarFlareMaterial() {
   return mat;
 }
 
+// Street podium shared by the retail belt, the massing podium, and the curtain-wall
+// backstop. Shop mouth sits above a granite plinth. Punched openings exist only
+// above HK_RETAIL_BELT, so a curtain grid cannot reach the pavement.
+function podiumStreetColor() {
+  const y = positionWorld.y;
+  const n = normalWorld;
+  const facing = step(abs(n.z), abs(n.x));
+  const along = mix(positionWorld.z, positionWorld.x, facing);
+  const bay = fract(along.mul(0.227));
+  const pier = smoothstep(0.1, 0.16, bay).mul(float(1.0).sub(smoothstep(0.84, 0.9, bay)));
+  const wall = float(1.0).sub(step(0.72, abs(n.y)));
+  const plinth = float(1.0).sub(smoothstep(1.05, 1.22, y));
+  const shop = smoothstep(1.12, 1.28, y).mul(float(1.0).sub(smoothstep(3.25, 3.45, y))).mul(pier).mul(wall);
+  const fascia = smoothstep(3.25, 3.45, y).mul(float(1.0).sub(smoothstep(4.5, 4.7, y))).mul(wall);
+  const belt = float(HK_RETAIL_BELT);
+  const above = smoothstep(belt, belt.add(0.15), y);
+  const storey = fract(y.sub(belt).div(3.9));
+  const hole = smoothstep(0.28, 0.36, bay).mul(float(1.0).sub(smoothstep(0.64, 0.72, bay)));
+  const punched = above
+    .mul(smoothstep(0.18, 0.26, storey))
+    .mul(float(1.0).sub(smoothstep(0.68, 0.76, storey)))
+    .mul(hole)
+    .mul(wall);
+  const granite = vec3(0.34, 0.33, 0.31);
+  const stone = vec3(0.55, 0.5, 0.45);
+  const tile = vec3(0.78, 0.71, 0.58);
+  const mouth = vec3(0.07, 0.06, 0.055);
+  const ashlar = vec3(0.63, 0.58, 0.52);
+  const pane = vec3(0.13, 0.17, 0.2);
+  const base = mix(mix(mix(stone, granite, plinth), mouth, shop), tile, fascia);
+  return mix(mix(base, ashlar, above), pane, punched);
+}
+
+function podiumShopGlow() {
+  const y = positionWorld.y;
+  const n = normalWorld;
+  const facing = step(abs(n.z), abs(n.x));
+  const along = mix(positionWorld.z, positionWorld.x, facing);
+  const bay = fract(along.mul(0.227));
+  const pier = smoothstep(0.1, 0.16, bay).mul(float(1.0).sub(smoothstep(0.84, 0.9, bay)));
+  const wall = float(1.0).sub(step(0.72, abs(n.y)));
+  const shop = smoothstep(1.35, 1.55, y).mul(float(1.0).sub(smoothstep(3.05, 3.2, y))).mul(pier).mul(wall);
+  const below = float(1.0).sub(step(float(HK_RETAIL_BELT), y));
+  const night = smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow);
+  return vec3(1.0, 0.72, 0.38).mul(shop).mul(below).mul(wall).mul(night).mul(0.45);
+}
+
 /**
  * Opaque shopfront for extrude and canyon gaps that have no LandsD mesh yet.
- * A granite plinth meets the pavement. The shop mouth starts above that plinth.
- * Punched windows, if any, are only in the upper storey of the belt.
+ * Granite meets the pavement. The shop mouth is above that plinth. No window
+ * grid runs through this belt.
  */
 function createRetailPodiumMaterial() {
   if (_retailPodium) return _retailPodium;
@@ -1907,40 +1972,25 @@ function createRetailPodiumMaterial() {
     metalness: 0.02
   });
   mat.name = 'hkRetailPodium';
-  const shade = Fn(() => {
-    const y = positionWorld.y;
-    const n = normalWorld;
-    const facing = step(abs(n.z), abs(n.x));
-    const along = mix(positionWorld.z, positionWorld.x, facing);
-    const bay = fract(along.mul(0.227));
-    const pier = smoothstep(0.1, 0.16, bay).mul(float(1.0).sub(smoothstep(0.84, 0.9, bay)));
-    const wall = float(1.0).sub(step(0.72, abs(n.y)));
-    const plinth = float(1.0).sub(smoothstep(1.05, 1.22, y));
-    const shop = smoothstep(1.12, 1.28, y).mul(float(1.0).sub(smoothstep(3.25, 3.45, y))).mul(pier).mul(wall);
-    const fascia = smoothstep(3.25, 3.45, y).mul(float(1.0).sub(smoothstep(4.5, 4.7, y))).mul(wall);
-    const hole = smoothstep(0.3, 0.38, bay).mul(float(1.0).sub(smoothstep(0.62, 0.7, bay)));
-    const punched = smoothstep(5.15, 5.35, y).mul(float(1.0).sub(smoothstep(7.05, 7.25, y))).mul(hole).mul(wall);
-    const granite = vec3(0.34, 0.33, 0.31);
-    const stone = vec3(0.55, 0.5, 0.45);
-    const tile = vec3(0.78, 0.71, 0.58);
-    const mouth = vec3(0.07, 0.06, 0.055);
-    const pane = vec3(0.16, 0.24, 0.28);
-    return mix(mix(mix(mix(stone, granite, plinth), mouth, shop), tile, fascia), pane, punched);
-  });
-  mat.colorNode = shade();
-  mat.emissiveNode = Fn(() => {
-    const y = positionWorld.y;
-    const n = normalWorld;
-    const facing = step(abs(n.z), abs(n.x));
-    const along = mix(positionWorld.z, positionWorld.x, facing);
-    const bay = fract(along.mul(0.227));
-    const pier = smoothstep(0.1, 0.16, bay).mul(float(1.0).sub(smoothstep(0.84, 0.9, bay)));
-    const wall = float(1.0).sub(step(0.72, abs(n.y)));
-    const shop = smoothstep(1.35, 1.55, y).mul(float(1.0).sub(smoothstep(3.05, 3.2, y))).mul(pier).mul(wall);
-    const night = smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow);
-    return vec3(1.0, 0.72, 0.38).mul(shop).mul(night).mul(0.45);
-  })();
+  mat.colorNode = Fn(() => podiumStreetColor())();
+  mat.emissiveNode = Fn(() => podiumShopGlow())();
   _retailPodium = mat;
+  return mat;
+}
+
+// Massing podium above the shopfront belt: ashlar and punched openings.
+// Curtain glass is reserved for the setback tower.
+let _podiumMasonry = null;
+function createPodiumMasonryMaterial() {
+  if (_podiumMasonry) return _podiumMasonry;
+  const mat = new THREE.MeshStandardNodeMaterial({
+    roughness: 0.88,
+    metalness: 0.04
+  });
+  mat.name = 'hkPodiumMasonry';
+  mat.colorNode = Fn(() => podiumStreetColor())();
+  mat.emissiveNode = Fn(() => podiumShopGlow())();
+  _podiumMasonry = mat;
   return mat;
 }
 
@@ -1949,6 +1999,7 @@ export {
   WALL_KINDS,
   createCurtainWallMaterial,
   createRetailPodiumMaterial,
+  createPodiumMasonryMaterial,
   createCarPaintMaterial,
   createTreeMaterial,
   createParkPavingMaterial,

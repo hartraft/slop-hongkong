@@ -12,7 +12,7 @@ import {
   hkRetailSlices,
   hkScaleRing
 } from './city-config.js';
-import { createCurtainWallMaterial, createRetailPodiumMaterial } from './tsl-materials.js';
+import { createCurtainWallMaterial, createPodiumMasonryMaterial, createRetailPodiumMaterial } from './tsl-materials.js';
 
 // LandsD footprint ring extruded to TopHeight − BaseHeight. Same shape path as
 // createExtrudedPolygonMesh in city-grid.js: outline in (x, −z), depth along Y.
@@ -65,17 +65,6 @@ function hkCurtainMaterials() {
     return mat;
   };
   return {
-    podium: make('hkPodiumGlass', {
-      glassTint: 0x1c3a45,
-      frameTint: 0x9aa6b0,
-      windowWidth: 3.15,
-      floorHeight: 3.9,
-      spandrelRatio: 0.3,
-      litProbability: 0.84,
-      warmth: 0.74,
-      reflectivity: 0.82,
-      seed: 2.4
-    }),
     tower0: make('hkTowerGlass0', {
       glassTint: 0x1a4d68,
       frameTint: 0xd5dee6,
@@ -138,7 +127,11 @@ function buildHkFootprintBlocks(scene, gltfPlan = null) {
   group.name = 'HongKongCityBlocks';
   const colliders = [];
   const allBlocks = [];
-  const glass = { ...hkCurtainMaterials(), retail: createRetailPodiumMaterial() };
+  const glass = {
+    ...hkCurtainMaterials(),
+    podium: createPodiumMasonryMaterial(),
+    retail: createRetailPodiumMaterial()
+  };
   const batches = {
     podium: [],
     tower0: [],
@@ -163,7 +156,7 @@ function buildHkFootprintBlocks(scene, gltfPlan = null) {
     if (!merged) return;
     merged.computeBoundingSphere();
     const mesh = new THREE.Mesh(merged, glass[key]);
-    mesh.name = key === 'retail' ? 'HkRetailPodium' : 'HkCurtainWall';
+    mesh.name = key === 'retail' ? 'HkRetailPodium' : key === 'podium' ? 'HkPodiumMasonry' : 'HkCurtainWall';
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);

@@ -136,8 +136,11 @@ test('the boot path extrudes curtain-wall glass and Central street signs', () =>
   assert.match(body, /HK_NULL_HEIGHT/);
   assert.match(body, /createCurtainWallMaterial/);
   assert.match(body, /createRetailPodiumMaterial/);
+  assert.match(body, /createPodiumMasonryMaterial/);
   assert.match(body, /hkRetailSlices/);
   assert.match(body, /HkRetailPodium/);
+  assert.match(body, /HkPodiumMasonry/);
+  assert.doesNotMatch(body, /hkPodiumGlass/);
   assert.doesNotMatch(body, /BoxGeometry|InstancedMesh|: 12\b|populateBlock/);
   const boot = buildings.slice(buildings.indexOf('function buildCityBlocks'));
   assert.match(boot, /return buildHkFootprintBlocks\(scene, gltfPlan\)/);
@@ -151,4 +154,16 @@ test('the boot path extrudes curtain-wall glass and Central street signs', () =>
   const main = readFileSync(path.join(root, 'js/main.js'), 'utf8');
   assert.match(main, /buildStreetDetails\(scene, gltfPlan\)/);
   assert.match(main, /buildCityBlocks\(scene, gltfPlan\)/);
+
+  const materials = readFileSync(path.join(root, 'js/tsl-materials.js'), 'utf8');
+  const curtain = materials.slice(
+    materials.indexOf('function createCurtainWallMaterial'),
+    materials.indexOf('const _carPaintCache')
+  );
+  assert.match(curtain, /HK_RETAIL_BELT/);
+  assert.match(curtain, /podiumStreetColor\(\)/);
+  assert.match(curtain, /if \(boxLocal\) return curtainCol/);
+  assert.match(curtain, /if \(boxLocal\) return glassEmit/);
+  const cell = materials.slice(materials.indexOf('function facadeCell('), materials.indexOf('let bayWidth', materials.indexOf('function facadeCell(')));
+  assert.doesNotMatch(cell, /HK_RETAIL_BELT/);
 });

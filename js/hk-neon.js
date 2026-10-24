@@ -1,6 +1,6 @@
-// Light neon on gap podiums only. Real LandsD facades carry the street.
-// A board projects over the sidewalk; a strip sits on the opaque shopfront belt.
-// Copy is Traditional Chinese.
+// Dense Traditional Chinese neon on the opaque shopfront belt.
+// Boards and strips stay under HK_RETAIL_BELT. They do not climb the glass.
+// Real LandsD photos are left alone; signs hang on canyon gaps.
 
 import {
   BLOCKS,
@@ -13,10 +13,10 @@ import { hkCanyonBuildings, planHkStreetCanyon } from './hk-ground-fill.js';
 
 const DENSITY = Object.freeze({
   highway: { id: 'highway', blade: 0, fascia: 0, high: 0, rows: 0, skip: 1, highSkip: 1 },
-  'des-voeux': { id: 'des-voeux', blade: 18, fascia: 14, high: 0, rows: 1, skip: 0.08, highSkip: 1 },
-  side: { id: 'side', blade: 24, fascia: 20, high: 0, rows: 1, skip: 0.12, highSkip: 1 },
-  shop: { id: 'shop', blade: 26, fascia: 22, high: 0, rows: 1, skip: 0.12, highSkip: 1 },
-  other: { id: 'other', blade: 36, fascia: 30, high: 0, rows: 1, skip: 0.2, highSkip: 1 }
+  'des-voeux': { id: 'des-voeux', blade: 6.6, fascia: 5.2, high: 8.4, rows: 2, skip: 0.05, highSkip: 0.12 },
+  side: { id: 'side', blade: 8.8, fascia: 7.0, high: 11, rows: 2, skip: 0.08, highSkip: 0.2 },
+  shop: { id: 'shop', blade: 9.6, fascia: 7.6, high: 12, rows: 2, skip: 0.1, highSkip: 0.22 },
+  other: { id: 'other', blade: 16, fascia: 13, high: 0, rows: 1, skip: 0.18, highSkip: 1 }
 });
 
 // Shop faces. Colours are the enamel and neon of a Central street: red, orange,
@@ -164,6 +164,13 @@ function pickCopy(catalog, x, z, salt, prev) {
   return i;
 }
 
+function clampSignY(y, h) {
+  const top = y + h * 0.5;
+  const beltTop = HK_RETAIL_BELT - 0.25;
+  if (top > beltTop) return y - (top - beltTop);
+  return y;
+}
+
 function clampAlong(len, along, halfW) {
   const limit = len / 2 - 0.55 - halfW;
   if (!(limit > 0)) return null;
@@ -187,10 +194,7 @@ function placeBlades(wall, density, signs, arms) {
     const along = clampAlong(wall.len, station.along + jitter, 0.12);
     if (along == null) continue;
     const bottom = 3.15 + h * 0.35;
-    let y = bottom + sizeH * 0.5;
-    const top = y + sizeH * 0.5;
-    const beltTop = HK_RETAIL_BELT - 0.25;
-    if (top > beltTop) y -= top - beltTop;
+    const y = clampSignY(bottom + sizeH * 0.5, sizeH);
     const out = sizeW * 0.5 + 0.06;
     const pos = hkNeonPoint(wall, along, out);
     signs.push({
@@ -242,7 +246,7 @@ function placeStrips(wall, density, signs, high) {
     const along = clampAlong(wall.len, station.along + phase + jitter, w * 0.5);
     if (along == null) continue;
     const height = high ? 0.7 + h * 0.26 : 0.86 + h * 0.32;
-    const y = (high ? 6.4 : 3.22) + (h - 0.5) * (high ? 0.4 : 0.26);
+    const y = clampSignY((high ? 6.15 : 3.45) + (h - 0.5) * (high ? 0.28 : 0.2), height);
     const pos = hkNeonPoint(wall, along, 0.16);
     const n = hkWallStreetNormal(wall);
     signs.push({

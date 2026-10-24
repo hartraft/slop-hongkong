@@ -47,8 +47,11 @@ test('density packs Des Voeux tighter than a side street, and skips highways', (
   assert.equal(highway.rows, 0);
   assert.ok(dv.blade < side.blade && side.blade < other.blade);
   assert.ok(dv.fascia < side.fascia && side.fascia <= shop.fascia && shop.fascia < other.fascia);
-  assert.equal(dv.rows, 1);
+  assert.equal(dv.rows, 2);
+  assert.equal(side.rows, 2);
+  assert.equal(shop.rows, 2);
   assert.equal(other.rows, 1);
+  assert.ok(dv.high > 0 && dv.high < dv.blade + side.blade);
 });
 
 test('a point sits proud of the street face, on either side of the carriageway', () => {
@@ -95,8 +98,8 @@ test('one block of canyon gets many boards and strips, highways get none', () =>
   const highway = planHkCanyonNeon([{ ...faceWall('HARCOURT ROAD', 96), highway: true }]);
   const blades = dv.signs.filter((sign) => sign.kind === 'blade');
   const strips = dv.signs.filter((sign) => sign.kind === 'fascia');
-  assert.ok(blades.length >= 3 && blades.length <= 8, `blades ${blades.length}`);
-  assert.ok(strips.length >= 4 && strips.length <= 10, `strips ${strips.length}`);
+  assert.ok(blades.length >= 8 && blades.length <= 18, `blades ${blades.length}`);
+  assert.ok(strips.length >= 16 && strips.length <= 36, `strips ${strips.length}`);
   assert.ok(dv.signs.length > side.signs.length, `dv ${dv.signs.length} side ${side.signs.length}`);
   assert.ok(side.signs.length > other.signs.length, `side ${side.signs.length} other ${other.signs.length}`);
   assert.equal(highway.signs.length, 0);
@@ -141,10 +144,10 @@ test('signs hang on the street face of a Des Voeux canyon and stay out of the la
   assert.equal(plan.walls.length, 2);
   assert.equal(plan.walls.every((wall) => wall.raw === 'DES VOEUX ROAD CENTRAL'), true);
   const neon = planHkCanyonNeon(plan.walls);
-  assert.ok(neon.signs.length >= 10 && neon.signs.length <= 40, `signs ${neon.signs.length}`);
+  assert.ok(neon.signs.length >= 24 && neon.signs.length <= 90, `signs ${neon.signs.length}`);
   const blades = neon.signs.filter((sign) => sign.kind === 'blade');
   const strips = neon.signs.filter((sign) => sign.kind === 'fascia');
-  assert.ok(blades.length >= 4 && strips.length >= 6);
+  assert.ok(blades.length >= 10 && strips.length >= 16, `blades ${blades.length} strips ${strips.length}`);
   for (const sign of neon.signs) {
     assert.ok(Math.abs(sign.x) > 4.2 && Math.abs(sign.x) < 7.2, `x ${sign.x}`);
     assert.equal(pointInRing(sign.x, sign.z, island), true);
@@ -165,9 +168,9 @@ test('Central Des Voeux shows several 繁體 signs from the street camera', () =
   const near = neon.signs.filter((sign) => Math.hypot(sign.x - cam.x, sign.z - cam.z) < 28);
   const blades = near.filter((sign) => sign.kind === 'blade');
   const strips = near.filter((sign) => sign.kind === 'fascia');
-  assert.ok(near.length >= 2 && near.length <= 16, `near ${near.length}`);
-  assert.ok(blades.length >= 1, `blades ${blades.length}`);
-  assert.ok(strips.length >= 1, `strips ${strips.length}`);
+  assert.ok(near.length >= 8 && near.length <= 48, `near ${near.length}`);
+  assert.ok(blades.length >= 2, `blades ${blades.length}`);
+  assert.ok(strips.length >= 4, `strips ${strips.length}`);
   const minD = Math.min(...near.map((sign) => Math.hypot(sign.x - cam.x, sign.z - cam.z)));
   assert.ok(minD > 4 && minD < 16, `nearest ${minD}`);
   const colours = new Set(near.map((sign) => sign.bg));
