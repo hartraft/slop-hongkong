@@ -190,7 +190,7 @@ The visible massing is the Central CBD, not the full Island + Kowloon extract. `
 
 A block is inside when its centroid lies in that box in the world frame (the same local ENU as `tools/geo-frame.mjs`). On the committed module that is 2,021 footprints. 1,943 have a positive `TopHeight - BaseHeight` and are extruded from `poly` with `ExtrudeGeometry` (the same outline path as `createExtrudedPolygonMesh`). 78 have a null height and are skipped (`HK_NULL_HEIGHT = 'skip'`): no stand-in slab and no invented storeys. The other 51,092 footprints are not built. The axis-aligned box stored on an empty `rects` list is not the mesh. Committed tuples do not carry courtyard holes, so a court extrudes as its outer ring.
 
-`index.html` preloads `js/hk-geodata.js`, then `js/geo-source.js`, then `js/city-config.js`, and the rest of the module graph (31 preloads). The atlas module is `js/hk-map.js`. `js/traffic.js` statically imports `js/pedestrian-routes.js`, so that file is preloaded too. The previous 29-count check stopped on the missing `geo-source.js` link and never reached it.
+`index.html` preloads `js/hk-geodata.js`, then `js/geo-source.js`, then `js/city-config.js`, and the rest of the module graph (33 preloads, including `js/hk-gltf-frame.js` and `js/hk-gltf.js`). The atlas module is `js/hk-map.js`. `js/traffic.js` statically imports `js/pedestrian-routes.js`, so that file is preloaded too. The previous 29-count check stopped on the missing `geo-source.js` link and never reached it.
 
 ### Shore helper
 

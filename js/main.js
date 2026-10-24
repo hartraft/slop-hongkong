@@ -8,6 +8,7 @@ import { buildCityGrid } from './city-grid.js';
 import { buildBoroughs } from './boroughs.js';
 import { buildLandmarks } from './landmarks.js';
 import { buildCityBlocks } from './buildings.js';
+import { mountHkGltfBuildings, prepareHkGltfSheet } from './hk-gltf.js';
 import { buildStreetDetails } from './street-details.js';
 import { createTrafficSystem, createHighwayTraffic } from './traffic.js';
 import { buildRoadPaint } from './road-paint.js';
@@ -80,9 +81,13 @@ async function initApp() {
   markInit('boroughs');
   const { colliders: landmarkColliders } = buildLandmarks(scene);
   markInit('landmarks');
-  const cityBlocks = buildCityBlocks(scene);
+  const gltfPlan = await prepareHkGltfSheet(window.location.href);
+  if (loadingStatus && gltfPlan) loadingStatus.textContent = '正在載入地政總署單體建築模型…';
+  const cityBlocks = buildCityBlocks(scene, gltfPlan);
   markInit('blocks');
-  const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...boroughs.colliders, ...(cityGrid.colliders || [])];
+  const gltfBuildings = await mountHkGltfBuildings(scene, gltfPlan);
+  markInit('gltf');
+  const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...gltfBuildings.colliders, ...boroughs.colliders, ...(cityGrid.colliders || [])];
 
   const streetDetails = buildStreetDetails(scene);
   markInit('streetDetails');

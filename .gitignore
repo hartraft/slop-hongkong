@@ -2,3 +2,5 @@
 # Full Hong Kong extracts from tools/fetch-hk.sh. The Statue Square samples under tools/data/hk/samples stay committed.
 tools/data/hk/landsd-*.geojson
 tools/data/hk/osm_*.json
+# LandsD individualised glTF sheets from tools/fetch-central-gltf-sheet.mjs (~35–110 MB).
+hk-3d/

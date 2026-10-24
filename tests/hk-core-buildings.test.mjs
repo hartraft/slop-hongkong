@@ -92,6 +92,6 @@ test('the boot builder extrudes Central rings and does not invent a stand-in hei
   assert.match(body, /HK_NULL_HEIGHT/);
   assert.doesNotMatch(body, /BoxGeometry|InstancedMesh|: 12\b/);
   const boot = src.slice(src.indexOf('function buildCityBlocks'));
-  assert.match(boot, /return buildHkFootprintBlocks\(scene\)/);
+  assert.match(boot, /return buildHkFootprintBlocks\(scene, gltfPlan\)/);
   assert.doesNotMatch(boot, /populateBlock/);
 });

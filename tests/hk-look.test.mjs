@@ -126,7 +126,7 @@ test('the boot path extrudes curtain-wall glass and Central street signs', () =>
   assert.match(body, /createCurtainWallMaterial/);
   assert.doesNotMatch(body, /BoxGeometry|InstancedMesh|: 12\b|populateBlock/);
   const boot = buildings.slice(buildings.indexOf('function buildCityBlocks'));
-  assert.match(boot, /return buildHkFootprintBlocks\(scene\)/);
+  assert.match(boot, /return buildHkFootprintBlocks\(scene, gltfPlan\)/);
   assert.doesNotMatch(boot, /populateBlock/);
 
   const streets = readFileSync(path.join(root, 'js/street-details.js'), 'utf8');
@@ -135,5 +135,5 @@ test('the boot path extrudes curtain-wall glass and Central street signs', () =>
   assert.match(live, /HongKongStreetDetails/);
   const main = readFileSync(path.join(root, 'js/main.js'), 'utf8');
   assert.match(main, /buildStreetDetails\(scene\)/);
-  assert.match(main, /buildCityBlocks\(scene\)/);
+  assert.match(main, /buildCityBlocks\(scene, gltfPlan\)/);
 });

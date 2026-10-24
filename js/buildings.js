@@ -122,7 +122,7 @@ function tryExtrudeHk(pts, height, lift) {
   return geo;
 }
 
-function buildHkFootprintBlocks(scene) {
+function buildHkFootprintBlocks(scene, gltfPlan = null) {
   const group = new THREE.Group();
   group.name = 'HongKongCityBlocks';
   const colliders = [];
@@ -140,6 +140,8 @@ function buildHkFootprintBlocks(scene) {
   let skippedNull = 0;
   let skippedDegenerate = 0;
   let skippedOwned = 0;
+  let skippedGltf = 0;
+  const hiddenIds = gltfPlan?.hiddenIds instanceof Set ? gltfPlan.hiddenIds : null;
   const flush = (key) => {
     const batch = batches[key];
     if (!batch.length) return;
@@ -174,6 +176,10 @@ function buildHkFootprintBlocks(scene) {
       // Bank of China is four triangular prisms. A full-height square plate would
       // hide that silhouette, so landmarks.js builds this one shaft.
       skippedOwned++;
+      continue;
+    }
+    if (hiddenIds && hiddenIds.has(b.id)) {
+      skippedGltf++;
       continue;
     }
     const plan = hkMassingPlan(b);
@@ -241,6 +247,7 @@ function buildHkFootprintBlocks(scene) {
     `extruded ${extruded} LandsD footprints; podium+tower ${podiumTowers}; curtain wall ${group.children.length} meshes; ` +
     `null height ${HK_NULL_HEIGHT} ${skippedNull}; ` +
     `landmark shaft ${skippedOwned}; ` +
+    `gltf hidden ${skippedGltf}; ` +
     `outside core skipped ${skippedOutside}; degenerate ${skippedDegenerate}` +
     (named.length ? `; ${named.map((block) => `${block.id} ${block.maxH}m`).join('; ')}` : '')
   );
@@ -254,8 +261,8 @@ function buildHkFootprintBlocks(scene) {
   };
 }
 
-function buildCityBlocks(scene) {
-  return buildHkFootprintBlocks(scene);
+function buildCityBlocks(scene, gltfPlan = null) {
+  return buildHkFootprintBlocks(scene, gltfPlan);
 }
 
 export { buildCityBlocks };

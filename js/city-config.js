@@ -227,6 +227,10 @@ const HK_CORE_BBOX = Object.freeze({
   east: 114.170
 });
 const HK_NULL_HEIGHT = 'skip';
+// Empty keeps LandsD footprint extrudes. After tools/fetch-central-gltf-sheet.mjs,
+// open index.html?gltf=11-SW-9A (or set this to that sheet id).
+const HK_GLTF_SHEET = '';
+const HK_GLTF_CAP = 6;
 
 function hkCoreScale() {
   const lat0 = GEO.frame.lat0;
@@ -1030,6 +1034,8 @@ export {
   HK_CORE_WORLD,
   HK_LANDMARK_CATALOG,
   HK_NULL_HEIGHT,
+  HK_GLTF_SHEET,
+  HK_GLTF_CAP,
   blockInHkCore,
   hkCoreProject,
   hkCoreUnproject,
