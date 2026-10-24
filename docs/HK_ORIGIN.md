@@ -1,6 +1,6 @@
 # Hong Kong world origin
 
-Decision record for the next geodata pipeline. The running build still uses the upstream Manhattan frame in `tools/geo-base.mjs` and `js/nyc-geodata.js`. These values are documentation only.
+Decision record for the Hong Kong frame. The running WebGPU build still loads the Manhattan scene in `js/nyc-geodata.js`. The numbers below are the Hong Kong frame in `tools/geo-frame.mjs`, selected with `GEO_CITY=hk`. `tools/geo-base.mjs` keeps the Manhattan frame and the NYC inputs unless that switch is set. Fetch and bbox notes are in [HK_GEO_PIPELINE.md](HK_GEO_PIPELINE.md).
 
 ## Origin
 
@@ -17,7 +17,7 @@ In a 1.2 km sample, Central had the densest OpenStreetMap coverage among Central
 
 ## Bearing
 
-v1 bearing is true north. A rotation onto the harbour axis is deferred. No offset angle is chosen in this step.
+v1 bearing is true north. `THETA = 0` in `tools/geo-frame.mjs`. A rotation onto the harbour axis is deferred. No offset angle is chosen in this step.
 
 ## v1 extent
 

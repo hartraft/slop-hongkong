@@ -1,12 +1,25 @@
 // tools/build-geodata.mjs — writes js/nyc-geodata.js (see geo-base.mjs for the frame and the data sources)
 // usage: GEO_DATA=tools/data node --max-old-space-size=8192 tools/build-geodata.mjs [out.js]
+// GEO_CITY=hk stops here. Hong Kong streets and blocks are later cuts; this file still builds the NYC boot geodata.
+// The NYC modules load CSCL and DCP at import time, so they are imported only after the city check.
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { geo, toWorld, rdp, rdpRing, ringArea, bbox, load, log, centroid } from './geo-base.mjs';
-import { pieces, STREETS, AVENUES } from './geo-streets.mjs';
-import { blocks, innerRing, roads, PLAZAS, CUT_Z, STRIP, SIDEWALK } from './geo-blocks.mjs';
-import { parkShapes, piers, bridges, nj, islands, manhattanSouth, manhattanNorth } from './geo-extra.mjs';
-import { buildRoadGraph } from './geo-roadgraph.mjs';
+import { cityFrame, resolveCity } from './geo-frame.mjs';
+
+const cityId = resolveCity(process.env.GEO_CITY);
+if (cityId !== 'nyc') {
+  const hk = cityFrame('hk');
+  console.error(`[geodata] GEO_CITY=${process.env.GEO_CITY} selects the Hong Kong frame (LAT0=${hk.LAT0}, LON0=${hk.LON0}, true north).`);
+  console.error('[geodata] This script builds the NYC boot geodata. Unset GEO_CITY to rebuild js/nyc-geodata.js.');
+  console.error('[geodata] Populate Hong Kong source data with: bash tools/fetch-hk.sh');
+  process.exit(2);
+}
+
+const { geo, toWorld, rdp, rdpRing, ringArea, bbox, load, log, centroid } = await import('./geo-base.mjs');
+const { pieces, STREETS, AVENUES } = await import('./geo-streets.mjs');
+const { blocks, innerRing, roads, PLAZAS, CUT_Z, STRIP, SIDEWALK } = await import('./geo-blocks.mjs');
+const { parkShapes, piers, bridges, nj, islands, manhattanSouth, manhattanNorth } = await import('./geo-extra.mjs');
+const { buildRoadGraph } = await import('./geo-roadgraph.mjs');
 
 const OUT = process.argv[2] || fileURLToPath(new URL('../js/nyc-geodata.js', import.meta.url));
 const q = (v) => Math.round(v * 10) / 10;

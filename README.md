@@ -2,7 +2,7 @@
 
 A Hong Kong city simulation built with [three.js](https://threejs.org/), WebGPURenderer, and TSL. Explore on foot, by car, by bicycle, or by helicopter.
 
-This build still renders the upstream Manhattan map. The Hong Kong geodata pipeline is in progress. v1 covers Hong Kong Island, Kowloon, and Victoria Harbour. The world origin for that port is Central (Statue Square / Chater): LAT0 = 22.28088, LON0 = 114.15979, with true north as the v1 bearing. Details are in [docs/HK_ORIGIN.md](docs/HK_ORIGIN.md).
+This build still renders the upstream Manhattan map from `js/nyc-geodata.js`. The Hong Kong frame is Central (Statue Square / Chater): LAT0 = 22.28088, LON0 = 114.15979, true north. v1 covers Hong Kong Island, Kowloon, and Victoria Harbour. The origin decision is in [docs/HK_ORIGIN.md](docs/HK_ORIGIN.md). Cut 1 of the pipeline (frame, LandsD fetch, Overpass fill) is in [docs/HK_GEO_PIPELINE.md](docs/HK_GEO_PIPELINE.md).
 
 This fork started from [mrdoob/slop-newyork](https://github.com/mrdoob/slop-newyork). The live New York demo remains at [mrdoob.github.io/slop-newyork](https://mrdoob.github.io/slop-newyork/).
 
@@ -14,4 +14,4 @@ Fork it, remix it, improve it, break it. Make games, animations, films, experime
 
 The project code is available under the [MIT License](LICENSE).
 
-The running build still ships the upstream geographic set: NYC Open Data and © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL). Long-term sources for the Hong Kong port are OpenStreetMap (ODbL) and open data from [DATA.GOV.HK](https://data.gov.hk/). Third-party data and dependencies retain their respective licenses.
+The running build still ships the upstream geographic set: NYC Open Data and © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL). The Hong Kong fetch path uses Lands Department data via the [CSDI Portal](https://portal.csdi.gov.hk/) / [DATA.GOV.HK](https://data.gov.hk/), with OpenStreetMap (ODbL) as fill. Third-party data and dependencies retain their respective licenses.

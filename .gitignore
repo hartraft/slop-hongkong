@@ -1,1 +1,4 @@
 .DS_Store
+# Full Hong Kong extracts from tools/fetch-hk.sh. The Statue Square samples under tools/data/hk/samples stay committed.
+tools/data/hk/landsd-*.geojson
+tools/data/hk/osm_*.json
