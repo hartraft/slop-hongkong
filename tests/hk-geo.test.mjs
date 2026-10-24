@@ -216,14 +216,15 @@ test('GEO_CITY=hk loads the frame without CSCL or DCP', () => {
   fs.rmSync(empty, { recursive: true, force: true });
 });
 
-test('GEO_CITY=hk builds streets and blocks and does not write hk-geodata', () => {
+test('GEO_CITY=hk writes harbour geodata and leaves nyc-geodata alone', async () => {
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-build-'));
+  const out = path.join(empty, 'hk-geodata.js');
   const boot = path.join(root, 'js/nyc-geodata.js');
   const before = fs.statSync(boot).mtimeMs;
-  const result = spawnSync(process.execPath, [path.join(root, 'tools/build-geodata.mjs')], {
+  const result = spawnSync(process.execPath, [path.join(root, 'tools/build-geodata.mjs'), out], {
     encoding: 'utf8',
     env: { ...process.env, GEO_CITY: 'hongkong', GEO_DATA: empty },
-    timeout: 20000
+    timeout: 120000
   });
   assert.equal(result.status, 0, result.stderr + result.stdout);
   const text = result.stderr + result.stdout;
@@ -234,9 +235,73 @@ test('GEO_CITY=hk builds streets and blocks and does not write hk-geodata', () =
   assert.match(text, /non-at-grade omitted/);
   assert.match(text, /Blocks \(Cut 3\): 7 footprints, 7 extruded/);
   assert.match(text, /Cut 4/);
+  assert.match(text, /Victoria Harbour|維多利亞港/);
   assert.doesNotMatch(text, /Stopping before blocks/);
   assert.doesNotMatch(text, /Broadway/);
   assert.equal(fs.statSync(boot).mtimeMs, before);
-  assert.equal(fs.existsSync(path.join(root, 'js/hk-geodata.js')), false);
+  assert.equal(fs.existsSync(path.join(root, 'js/hk-geodata.js')), true);
+  const built = await import(pathToFileURL(out).href);
+  assert.equal(built.GEO.frame.city, 'hk');
+  assert.ok(built.GEO.harbour.rings.length >= 1);
+  assert.equal(built.GEO.harbour.oppositeShore, 'kowloon');
+  assert.ok(built.GEO.manhattan.length > 10);
+  assert.ok(built.GEO.boroughs.newJersey[0].length > 10);
+  assert.ok(Math.abs(built.GEO.points.central[0]) < 1);
+  assert.ok(Math.abs(built.GEO.points.central[1]) < 1);
+  assert.ok(built.GEO.points.tst[0] > 900);
+  assert.ok(built.GEO.piers.length >= 40);
+  assert.equal(built.GEO.blocks.length, 7);
+  assert.equal(built.GEO.blocks[0].length, 9);
+  assert.equal(typeof built.GEO.blocks[0][6], 'number');
+  const committed = await import(pathToFileURL(path.join(root, 'js/hk-geodata.js')).href);
+  assert.equal(committed.GEO.frame.city, 'hk');
+  assert.ok(committed.GEO.harbour.rings.length >= 1);
+  assert.match(committed.GEO.harbour.name, /Victoria Harbour|維多利亞港/);
+  fs.rmSync(empty, { recursive: true, force: true });
+});
+
+test('resolveRuntimeCity defaults to nyc and lets the query win', async () => {
+  const { resolveRuntimeCity } = await import(pathToFileURL(path.join(root, 'js/geo-source.js')).href);
+  assert.equal(resolveRuntimeCity({}, ''), 'nyc');
+  assert.equal(resolveRuntimeCity({ GEO_CITY: 'hongkong' }, ''), 'hk');
+  assert.equal(resolveRuntimeCity({ GEO_CITY: 'hong-kong' }, ''), 'hk');
+  assert.equal(resolveRuntimeCity({ GEO_CITY: 'nyc' }, '?city=hk'), 'hk');
+  assert.equal(resolveRuntimeCity({ GEO_CITY: 'hk' }, '?city=nyc'), 'nyc');
+});
+
+test('unset GEO_CITY keeps the Manhattan frame', () => {
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-boot-nyc-'));
+  const script = path.join(empty, 'boot.mjs');
+  fs.writeFileSync(script, `
+    import { GEO, RUNTIME_CITY } from ${JSON.stringify(pathToFileURL(path.join(root, 'js/geo-source.js')).href)};
+    if (RUNTIME_CITY !== 'nyc') process.exit(2);
+    if (GEO.frame.city) process.exit(3);
+    if (!String(GEO.frame.origin).includes('42nd')) process.exit(4);
+  `);
+  const env = { ...process.env };
+  delete env.GEO_CITY;
+  const result = spawnSync(process.execPath, [script], { encoding: 'utf8', env, timeout: 20000 });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  fs.rmSync(empty, { recursive: true, force: true });
+});
+
+test('GEO_CITY=hk loads the Hong Kong module', () => {
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-boot-hk-'));
+  const script = path.join(empty, 'boot.mjs');
+  fs.writeFileSync(script, `
+    import { GEO, RUNTIME_CITY } from ${JSON.stringify(pathToFileURL(path.join(root, 'js/geo-source.js')).href)};
+    if (RUNTIME_CITY !== 'hk') process.exit(2);
+    if (GEO.frame.city !== 'hk') process.exit(3);
+    if (!GEO.harbour || !GEO.harbour.rings.length) process.exit(4);
+    if (Math.abs(GEO.points.central[0]) > 1 || Math.abs(GEO.points.central[1]) > 1) process.exit(5);
+    const keys = Object.keys(GEO.points);
+    if (!keys.includes('central') || !keys.includes('tst') || !keys.includes('admiralty')) process.exit(6);
+  `);
+  const result = spawnSync(process.execPath, [script], {
+    encoding: 'utf8',
+    env: { ...process.env, GEO_CITY: 'hk' },
+    timeout: 20000
+  });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
   fs.rmSync(empty, { recursive: true, force: true });
 });

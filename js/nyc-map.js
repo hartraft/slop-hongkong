@@ -1,4 +1,4 @@
-import { GEO } from './nyc-geodata.js';
+import { GEO } from './geo-source.js';
 import {
   ROADS,
   BLOCKS,
@@ -223,6 +223,9 @@ function mapLayers() {
   L.islands = new Path2D();
   for (const ring of rings([RANDALLS_ISLAND_POLYGON, ROOSEVELT_ISLAND_POLYGON, GOVERNORS_ISLAND_POLYGON, LIBERTY_ISLAND_POLYGON,
     ELLIS_ISLAND_POLYGON, MILL_ROCK_POLYGON])) addRing(L.islands, ring);
+  // Victoria Harbour (Hong Kong). The NYC module has no harbour key, so this path stays empty.
+  L.harbour = new Path2D();
+  for (const ring of rings((GEO.harbour && GEO.harbour.rings) || [])) addRing(L.harbour, ring);
 
   // Manhattan inside its bulkhead line, and its piers
   L.manhattan = new Path2D();
@@ -767,6 +770,10 @@ class NYCMapSystem {
     v.world(ctx);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
+
+    // Victoria Harbour under the shores, so Island and Kowloon cover any overlap. Empty on the NYC boot.
+    ctx.fillStyle = MAP.pond;
+    ctx.fill(L.harbour);
 
     // 1. Land around the harbour & the islands
     ctx.fillStyle = MAP.land;

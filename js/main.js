@@ -4,6 +4,7 @@ import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { createPostProcessing } from './post-processing.js';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
 import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
+import { RUNTIME_CITY } from './geo-source.js';
 import { buildCityGrid } from './city-grid.js';
 import { buildBoroughs } from './boroughs.js';
 import { buildLandmarks } from './landmarks.js';
@@ -213,6 +214,10 @@ async function initApp() {
   const cameraButtons = document.querySelectorAll('[data-camera]');
   const timeButtons = document.querySelectorAll('[data-time]');
   const teleportButtons = document.querySelectorAll('[data-teleport]');
+  // Hong Kong buttons stay hidden on the NYC boot. ?city=hk reveals them and hides the Manhattan list.
+  if (RUNTIME_CITY === 'hk') {
+    for (const btn of teleportButtons) btn.hidden = btn.getAttribute('data-city') !== 'hk';
+  }
   const hudToggleBtn = document.getElementById('btn-toggle-hud');
   const modeSwitch = document.getElementById('mode-switch');
   touchControls.onAvailabilityChange = placeModeIndicator;

@@ -5,7 +5,7 @@ import { pieces } from './geo-streets.mjs';
 import { blocks, blockRaster as R, blockLabels as lab, CUT_Z } from './geo-blocks.mjs';
 
 if (cityId !== 'nyc') {
-  throw new Error('tools/geo-extra.mjs is the Manhattan harbour stage (parks, piers, bridges, Upper Manhattan). GEO_CITY=hk stops before it; harbour and hk-geodata are Cut 4.');
+  throw new Error('tools/geo-extra.mjs is the Manhattan harbour stage (parks, piers, bridges, Upper Manhattan). GEO_CITY=hk uses tools/geo-hk-extra.mjs.');
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

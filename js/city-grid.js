@@ -57,7 +57,7 @@ import {
   createRoadPaintMaterial,
   createTunnelShadeMaterial
 } from './tsl-materials.js';
-import { GEO } from './nyc-geodata.js';
+import { GEO } from './geo-source.js';
 
 // Live construction data consumed by the building and street-detail builders after buildCityGrid().
 let centralParkClearings;
@@ -1815,6 +1815,7 @@ function buildCityGrid(scene) {
     roughness: 0.62
   });
 
+  if (GEO.frame.city !== 'hk') {
   const CPG = GEO.centralPark;
   const flatPts = (flat) => {
     const o = [];
@@ -2443,6 +2444,7 @@ function buildCityGrid(scene) {
     for (let i = lampMatrices.length - 1; i >= 0; i--) {
       if (Math.hypot(lampMatrices[i].elements[12] - cx, lampMatrices[i].elements[14] - cz) < R + 1) lampMatrices.splice(i, 1);
     }
+  }
   }
 
   // Instanced plaza & park furniture: NYC Parks slatted benches (seat facing +z) & cast-iron lampposts with globes

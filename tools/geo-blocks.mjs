@@ -1,7 +1,8 @@
 // Part 3: blocks.
 // GEO_CITY unset or nyc: Manhattan curb islands from the at-grade centreline (this file).
 // GEO_CITY=hk: LandsD Building footprints and TopHeight-BaseHeight (tools/geo-hk-blocks.mjs).
-// Hong Kong does not apply the Broadway / Central Park / FDR name filters. It does not write hk-geodata.
+// Hong Kong does not apply the Broadway / Central Park / FDR name filters.
+// tools/build-geodata.mjs writes js/hk-geodata.js.
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { geo, Raster, rdpRing, ringArea, bbox, log, cityId, toWorld } from './geo-base.mjs';

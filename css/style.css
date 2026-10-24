@@ -616,6 +616,10 @@ body.hud-minimized .icon-show {
   gap: 1px;
 }
 
+.tp-btn[hidden] {
+  display: none !important;
+}
+
 .pop-sub {
   font-size: 11.5px;
   font-weight: 500;

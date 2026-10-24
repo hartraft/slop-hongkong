@@ -3,7 +3,7 @@
 // Width is a heuristic where neither source has a measured carriageway.
 // The road graph keeps the NYC 7-tuple and, like tools/geo-roadgraph.mjs, only at-grade
 // links (level "13"). Tunnels, bridges, and ramps stay on `pieces` and are left out of the graph.
-// Blocks are tools/geo-hk-blocks.mjs. This module does not write hk-geodata.
+// Blocks are tools/geo-hk-blocks.mjs. tools/build-geodata.mjs writes js/hk-geodata.js.
 import fs from 'node:fs';
 import path from 'node:path';
 import { featureKey } from './fetch-landsd.mjs';

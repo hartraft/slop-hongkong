@@ -4,7 +4,7 @@
 // There is no Manhattan name filter (Broadway plazas, Central Park drives, FDR / Route 9A).
 // The v1 bbox is the detailed set. CUT_Z sits north of the Lion Rock line; footprints
 // past that line are a low-detail carpet (outlines, no lots, no extrusion).
-// Victoria Harbour and the playable hk-geodata module stay in Cut 4.
+// Victoria Harbour is tools/geo-hk-extra.mjs. tools/build-geodata.mjs writes js/hk-geodata.js.
 import fs from 'node:fs';
 import path from 'node:path';
 import { HK_ISLAND_KOWLOON_BBOX } from './geo-frame.mjs';
@@ -597,7 +597,7 @@ export function buildHkBlocks({ buildings, osm = null, pieces = null, toWorld, b
   };
   if (log) {
     log(`${blocks.length} blocks from building footprints (${extruded} extruded, ${nullHeight} without height); ${stats.droppedSpecks} specks dropped; OSM gaps ${osmGapBlocks}; low-detail carpet ${lowDetail.length}`);
-    log(`detail cut z>${detail.cutZ} (north of the v1 ridgeline). At-grade road pieces ${roads.length}. No hk-geodata module.`);
+    log(`detail cut z>${detail.cutZ} (north of the v1 ridgeline). At-grade road pieces ${roads.length}.`);
   }
   return { blocks, lowDetail, roads, cutZ: detail.cutZ, innerRing: [], report };
 }

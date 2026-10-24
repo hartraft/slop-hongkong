@@ -2189,6 +2189,7 @@ function addIslandBuildings(list) {
 // { colliders, update(elapsed) } (55 s trips, 12 s dwells)
 function buildRooseveltTram(group, parts, lm) {
   const QB = EAST_RIVER_BRIDGES.find((b) => b.id === 'queensboro') || EAST_RIVER_BRIDGES[0];
+  if (!QB) return { colliders: [], update() {} };
   const qbLen = Math.hypot(QB.b.x - QB.a.x, QB.b.z - QB.a.z);
   const dx = (QB.b.x - QB.a.x) / qbLen;
   const dz = (QB.b.z - QB.a.z) / qbLen;

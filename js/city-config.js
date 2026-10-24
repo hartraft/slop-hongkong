@@ -1,4 +1,4 @@
-import { GEO } from './nyc-geodata.js';
+import { GEO } from './geo-source.js';
 
 // js/city-config.js
 // New York City spatial configuration & street database at true 1:1 scale, derived from the real geography in
@@ -91,12 +91,17 @@ const ALL_AVENUES = GEO.avenues.map((a) => {
   };
 });
 // The shore highways (drawn following the shoreline by the maps; built by city-grid.js's waterfront edge)
-ALL_AVENUES.push(
-  { id: 'westside', x: -2000, name: '12th Ave / West Side Hwy (NY 9A)', short: 'West Side Hwy', dir: 0, width: 28, isHighway: true, minZ: CUT_Z, maxZ: 6200, followsShore: 'west' },
-  { id: 'fdr', x: 1500, name: 'FDR Drive', short: 'FDR Dr', dir: 0, width: 26, isHighway: true, minZ: CUT_Z, maxZ: 6400, followsShore: 'east' }
-);
+if (GEO.frame.city !== 'hk') {
+  ALL_AVENUES.push(
+    { id: 'westside', x: -2000, name: '12th Ave / West Side Hwy (NY 9A)', short: 'West Side Hwy', dir: 0, width: 28, isHighway: true, minZ: CUT_Z, maxZ: 6200, followsShore: 'west' },
+    { id: 'fdr', x: 1500, name: 'FDR Drive', short: 'FDR Dr', dir: 0, width: 26, isHighway: true, minZ: CUT_Z, maxZ: 6400, followsShore: 'east' }
+  );
+}
 const AVENUE_BY_ID = new Map(ALL_AVENUES.map((a) => [a.id, a]));
-const avenueX = (id) => AVENUE_BY_ID.get(String(id)).x;
+const avenueX = (id) => {
+  const avenue = AVENUE_BY_ID.get(String(id));
+  return avenue ? avenue.x : 0;
+};
 // The avenue's name at a given z (8th Ave below 59th St, Central Park West to 110th St, Frederick Douglass Blvd above)
 function avenueNameAt(ave, z) {
   if (!ave.segs) return ave.short;
@@ -110,9 +115,10 @@ function avenueNameAt(ave, z) {
 // Midtown core avenues & streets (signal heads, crosswalk details & the landmark blocks of the old midtown grid)
 const coreAve = (id, name, extra = {}) => {
   const a = AVENUE_BY_ID.get(id);
+  if (!a) return { x: 0, name, dir: 0, width: 18, sidewalk: 5.2, ...extra };
   return { x: a.x, name, dir: a.dir, width: a.width, sidewalk: 5.2, ...extra };
 };
-const AVENUES = [
+const AVENUES = GEO.frame.city === 'hk' ? [] : [
   coreAve('8', '8th Ave'),
   coreAve('7', '7th Ave / Broadway', { isTimesSquare: true }),
   coreAve('6', '6th Ave'),
@@ -123,10 +129,11 @@ const AVENUES = [
 ];
 const coreSt = (n, name, extra = {}) => {
   const s = STREET_BY_NUMBER.get(n);
+  if (!s) return { z: (42 - n) * 79.5, name, dir: 0, width: 12, sidewalk: 4.6, number: n, ...extra };
   const seg = s.segs.reduce((m, q) => (q[1] - q[0] > m[1] - m[0] ? q : m), s.segs[0]);
   return { z: s.z, name, dir: seg[2], width: seg[3], sidewalk: 4.6, number: n, ...extra };
 };
-const STREETS = [
+const STREETS = GEO.frame.city === 'hk' ? [] : [
   coreSt(58, '58th St'),
   coreSt(53, '53rd St'),
   coreSt(48, '48th St'),
@@ -141,7 +148,7 @@ const STREETS = [
 // ---------------------------------------------------------------------------------------------------------------------
 // Central Park (the NYC Parks property: 59th to 110th St, 5th Ave to Central Park West, at the park walls)
 // ---------------------------------------------------------------------------------------------------------------------
-const CENTRAL_PARK_BOUNDS = { ...GEO.centralPark.bounds };
+const CENTRAL_PARK_BOUNDS = { ...(GEO.centralPark.bounds || { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }) };
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Shoreline: the island's bulkhead line (piers cut off) south of the cut; west / east shore x at any z
@@ -197,6 +204,7 @@ function getIslandBoundsAtZ(z) {
 const BROADWAY_LINE = toPts(GEO.broadway);
 function getBroadwayX(z) {
   const L = BROADWAY_LINE;
+  if (L.length < 2) return L[0] ? L[0].x : 0;
   if (z <= L[0].z) return L[0].x;
   if (z >= L[L.length - 1].z) return L[L.length - 1].x;
   let lo = 0;
@@ -263,9 +271,11 @@ const RANDALLS_ISLAND_POLYGON = islandPts('randalls');
 const LIBERTY_ISLAND_POLYGON = islandPts('liberty');
 const ELLIS_ISLAND_POLYGON = islandPts('ellis');
 const MILL_ROCK_POLYGON = islandPts('millRock');
-const LIBERTY_STATUE_POS = { x: GEO.points.statueOfLiberty[0], z: GEO.points.statueOfLiberty[1] };
-const biggestRing = (rings) => rings.reduce((a, r) => (r.length > a.length ? r : a), rings[0]);
-const NJ_SHORELINE_POLYGON = toPts(GEO.boroughs.newJersey[0]);
+const LIBERTY_STATUE_POS = GEO.points.statueOfLiberty
+  ? { x: GEO.points.statueOfLiberty[0], z: GEO.points.statueOfLiberty[1] }
+  : { x: 1e6, z: 1e6 };
+const biggestRing = (rings) => (rings && rings.length ? rings.reduce((a, r) => (r.length > a.length ? r : a), rings[0]) : []);
+const NJ_SHORELINE_POLYGON = GEO.boroughs.newJersey[0] ? toPts(GEO.boroughs.newJersey[0]) : [];
 const BROOKLYN_POLYGONS = GEO.boroughs.brooklyn.map(toPts);
 const QUEENS_POLYGONS = GEO.boroughs.queens.map(toPts);
 const BRONX_POLYGONS = GEO.boroughs.bronx.map(toPts);
@@ -279,6 +289,7 @@ const UPPER_MANHATTAN_POLYGON = toPts(GEO.upperManhattan);
 // Mainland beyond the city line (out to the fogged horizon)
 const WESTCHESTER_POLYGON = (() => {
   const B = BRONX_POLYGON;
+  if (!B.length) return [];
   let minZ = Infinity;
   for (const p of B) minZ = Math.min(minZ, p.z);
   // a band north of the Bronx's northern edge, from the Hudson to Long Island Sound
@@ -286,6 +297,7 @@ const WESTCHESTER_POLYGON = (() => {
 })();
 const NASSAU_POLYGON = (() => {
   const Q = biggestRing(GEO.boroughs.queens);
+  if (!Q.length) return [];
   let maxX = -Infinity;
   for (let i = 0; i < Q.length; i += 2) maxX = Math.max(maxX, Q[i]);
   return [{ x: maxX - 300, z: -9000 }, { x: 60000, z: -9000 }, { x: 60000, z: 9000 }, { x: maxX - 300, z: 9000 }];
@@ -310,6 +322,7 @@ function shoreCrossing(ax, az, ux, uz, fromT, toT, inside) {
 }
 function makeBridge(id, name, short, type, spec) {
   const g = GEO.bridges[id];
+  if (!g) return null;
   const [ax, az] = g.a;
   const [ux, uz] = g.dir;
   const L = spec.length;
@@ -341,7 +354,7 @@ const EAST_RIVER_BRIDGES = [
     towers: (s) => [s + 20, s + 20 + 486],
     extra: { deckY: 38, towerH: 84, width: 26, sideSpan: 284, anchorage: [40, 14] }
   })
-];
+].filter(Boolean);
 
 // Outer suspension bridges (skyline landmarks) from their towers' real positions: George Washington Bridge at 178th St
 // (main span 1067 m, towers 184 m, side spans 186 m & 198 m), Verrazzano-Narrows Bridge from Fort Wadsworth to Fort
@@ -362,12 +375,12 @@ function outerBridge(id, name, short, type, tA, tB, backA, backB, extra) {
   };
 }
 const GP = GEO.points;
-const OUTER_BRIDGES = [
+const OUTER_BRIDGES = GP.gwbManhattanTower && GP.gwbNJTower && GP.verrazzanoStatenTower && GP.verrazzanoBrooklynTower ? [
   outerBridge('gwb', 'George Washington Bridge', 'G. Washington Br', 'gwb', GP.gwbManhattanTower, GP.gwbNJTower, 600, 260,
     { deckY: 65, towerH: 184, width: 36, sideSpan: [186, 198], anchorage: [44, 14] }),
   outerBridge('verrazzano', 'Verrazzano-Narrows Bridge', 'Verrazzano Br', 'verrazzano', GP.verrazzanoStatenTower, GP.verrazzanoBrooklynTower, 450, 450,
     { deckY: 69, towerH: 211, width: 31, sideSpan: [370, 370], anchorage: [46, 12] })
-];
+] : [];
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Streets database: every numbered street (1st..129th St) at its real z & extent, and the named Lower Manhattan
@@ -593,8 +606,12 @@ for (const b of BLOCKS) b.district = districtAt(b.cx, b.cz);
 // ---------------------------------------------------------------------------------------------------------------------
 const LANDMARK_SITES = GEO.landmarks;
 // Street-level arrivals shared by every travel mode. Heading 0 faces south (+z), PI north.
-const owtc = LANDMARK_SITES['One World Trade Center'];
-const TELEPORT_LOCATIONS = {
+const owtc = LANDMARK_SITES['One World Trade Center'] || { x: -305.7, z: 5210 };
+const TELEPORT_LOCATIONS = GEO.frame.city === 'hk' ? {
+  central: { x: GEO.points.central[0], z: GEO.points.central[1], heading: Math.PI },
+  tst: { x: GEO.points.tst[0], z: GEO.points.tst[1], heading: 0 },
+  admiralty: { x: GEO.points.admiralty[0], z: GEO.points.admiralty[1], heading: Math.PI }
+} : {
   empire: { x: avenueX('5') + 3.6, z: streetZ(36), heading: 0 },
   timessq: { x: avenueX('7') + 3.6, z: streetZ(46), heading: 0 },
   chrysler: { x: avenueX('lex') + 3.6, z: streetZ(40), heading: Math.PI },
@@ -623,11 +640,13 @@ const NYC_LANDMARKS = [
   const s = site(osm, { x: 0, z: 0 });
   return { id, name, short, x: s.x, z: s.z, district };
 });
-NYC_LANDMARKS.push(
-  { id: 'centralpark', name: 'Central Park & The Lake', short: 'Central Park', x: -560, z: -2630, district: 'Uptown' },
-  { id: 'brooklynbr', name: 'Brooklyn Bridge', short: 'Brooklyn Bridge', x: EAST_RIVER_BRIDGES[3].a.x + 700, z: EAST_RIVER_BRIDGES[3].a.z + 200, district: 'East River' },
-  { id: 'queensborobr', name: 'Queensboro 59th St Bridge', short: '59th St Bridge', x: 1500, z: -1410, district: 'East River' }
-);
+if (EAST_RIVER_BRIDGES[3]) {
+  NYC_LANDMARKS.push(
+    { id: 'centralpark', name: 'Central Park & The Lake', short: 'Central Park', x: -560, z: -2630, district: 'Uptown' },
+    { id: 'brooklynbr', name: 'Brooklyn Bridge', short: 'Brooklyn Bridge', x: EAST_RIVER_BRIDGES[3].a.x + 700, z: EAST_RIVER_BRIDGES[3].a.z + 200, district: 'East River' },
+    { id: 'queensborobr', name: 'Queensboro 59th St Bridge', short: '59th St Bridge', x: 1500, z: -1410, district: 'East River' }
+  );
+}
 
 const ISLAND_BOUNDS = (() => {
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -650,6 +669,15 @@ function getBlockBounds(col, row) {
   const eastAve = AVENUES[col + 1];
   const northSt = STREETS[row];
   const southSt = STREETS[row + 1];
+  if (!westAve || !eastAve || !northSt || !southSt) {
+    const minX = col * 80;
+    const minZ = row * 80;
+    return {
+      col, row, minX, maxX: minX + 60, minZ, maxZ: minZ + 50,
+      cx: minX + 30, cz: minZ + 25, width: 60, depth: 50,
+      sidewalkMinX: minX, sidewalkMaxX: minX + 60, sidewalkMinZ: minZ, sidewalkMaxZ: minZ + 50
+    };
+  }
   const minX = westAve.x + westAve.width * 0.5 + westAve.sidewalk;
   const maxX = eastAve.x - eastAve.width * 0.5 - eastAve.sidewalk;
   const minZ = northSt.z + northSt.width * 0.5 + northSt.sidewalk;

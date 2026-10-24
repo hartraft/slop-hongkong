@@ -42,7 +42,7 @@ import {
   createBillboardMaterial,
   WALL_KINDS
 } from './tsl-materials.js';
-import { GEO } from './nyc-geodata.js';
+import { GEO } from './geo-source.js';
 import { fdrViaduct, pavedPlazaRects, parkTreeSites, sidewalkBlocks } from './city-grid.js';
 
 // js/buildings.js

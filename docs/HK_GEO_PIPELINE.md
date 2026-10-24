@@ -1,6 +1,6 @@
 # Hong Kong geodata pipeline
 
-The WebGPU sim still boots the committed Manhattan scene in `js/nyc-geodata.js`. Cut 3 builds Hong Kong blocks from LandsD Building footprints (`TopHeight - BaseHeight`) on top of the Cut 2 street graph. It does not write `js/hk-geodata.js` and does not build the harbour (Cut 4).
+The default page still boots the committed Manhattan scene in `js/nyc-geodata.js`. Cut 4 writes `js/hk-geodata.js`: the Cut 2 street graph, LandsD Building blocks (`TopHeight - BaseHeight`), and Victoria Harbour from OSM coast and water. Open `index.html?city=hk` to load that module. The Hong Kong file is a dynamic import, so the NYC preload does not fetch it.
 
 ## Frame
 
@@ -15,7 +15,7 @@ The WebGPU sim still boots the committed Manhattan scene in `js/nyc-geodata.js`.
 
 `tools/geo-base.mjs` reads `GEO_CITY`. Unset or `nyc` runs the existing Manhattan shoreline build and still requires the NYC inputs below. `hk` (aliases `hongkong`, `hong-kong`) sets the Hong Kong frame and does not open CSCL or DCP.
 
-`node tools/build-geodata.mjs` with `GEO_CITY=hk` builds the street graph, then the blocks, and exits 0. It does not rewrite `js/nyc-geodata.js` and does not write an `hk-geodata` module. `tools/geo-blocks.mjs` dispatches: unset `GEO_CITY` (or `nyc`) still rasterises Manhattan curb islands; `hk` calls `tools/geo-hk-blocks.mjs`.
+`GEO_CITY=hk node tools/build-geodata.mjs` builds the street graph, the blocks, and the harbour, writes `js/hk-geodata.js`, and exits 0. It does not rewrite `js/nyc-geodata.js`. An optional second argument is the output path. `tools/geo-blocks.mjs` dispatches: unset `GEO_CITY` (or `nyc`) still rasterises Manhattan curb islands; `hk` calls `tools/geo-hk-blocks.mjs`. The Manhattan extra stage stays in `tools/geo-extra.mjs`. Hong Kong harbour is `tools/geo-hk-extra.mjs`.
 
 ## v1 bbox
 
@@ -138,7 +138,7 @@ Hong Kong blocks are building footprints, not street-bounded curb islands. Each 
 
 OSM buildings are gap fill only. If `tools/data/hk/osm_buildings.json` or `GEO_HK_OSM_BUILDINGS` is present (Overpass JSON or GeoJSON), a building whose interior point misses every LandsD ring is appended. `height` or `building:levels` × 3.2 m supplies the extrusion when the tag exists; otherwise the gap lot is not extruded. The default fetch does not download this file. LandsD is the building layer. A full extract is `landsd-buildings.geojson` (gitignored); without it the stage uses `samples/statue-square-buildings.geojson`.
 
-`CUT_Z` is not Manhattan's −7090 (129th Street). That line would push the north of Kowloon out of the detailed set. Hong Kong `CUT_Z` is 200 m north of the v1 northern edge, so Hong Kong Island and Kowloon up to the Lion Rock / Kowloon Peak line stay detailed (`z > CUT_Z`). Footprints north of that line, still inside the east-west span, are `lowDetail`: outlines with no lots and no extrusion. The committed sample sits on the origin and produces no carpet. The shoreline ring, Victoria Harbour, piers, and parks are not part of this cut; blocks do not need a land mask because they come from footprints.
+`CUT_Z` is not Manhattan's −7090 (129th Street). That line would push the north of Kowloon out of the detailed set. Hong Kong `CUT_Z` is 200 m north of the v1 northern edge, so Hong Kong Island and Kowloon up to the Lion Rock / Kowloon Peak line stay detailed (`z > CUT_Z`). Footprints north of that line, still inside the east-west span, are `lowDetail`: outlines with no lots and no extrusion. The committed sample sits on the origin and produces no carpet. Victoria Harbour, piers, and the Kowloon shore are Cut 4 (`tools/geo-hk-extra.mjs`), not this block stage. Blocks do not need a land mask because they come from footprints.
 
 ```bash
 # Statue Square sample: streets, then seven extruded footprints. Exit 0.
@@ -152,6 +152,40 @@ GEO_CITY=hk node tools/geo-blocks.mjs
 GEO_CITY=hk node tools/build-geodata.mjs
 ```
 
-## Later cuts
+## Harbour and the module (Cut 4)
 
-- Cut 4: Victoria Harbour and the rest of the extra stage (shore, piers, parks), then an `hk-geodata` module the sim can boot. Until that lands, the sim keeps booting `js/nyc-geodata.js`. Block objects already carry `poly`, `height`, `base`, `rects`, and `frames` for that module. The NYC serialised block tuple is not extended here.
+OSM keeps the water and coast role. LandsD stays Building and Road Centreline. iB1000 hydro is later; harbour v1 is OSM.
+
+`tools/data/q_hk_coast.overpassql` fetches coastline and water ways, plus relations (`natural=water`, `natural=coastline`, `harbour=yes`, `waterway=riverbank`) so the Victoria Harbour multipolygon is included. Piers stay on `q_hk_piers.overpassql`. A full fetch writes gitignored `tools/data/hk/osm_coast.json` and `osm_piers.json`. Without those files the build uses the committed samples `tools/data/hk/samples/harbour-coast.json` and `harbour-piers.json`. `GEO_HK_COAST` and `GEO_HK_PIERS` override both. The committed `js/hk-geodata.js` is the sample build, so a fresh clone reproduces it.
+
+`tools/geo-hk-extra.mjs` rasterises the v1 bbox (about 16 m). Coastline is a barrier. The bbox border is sealed. Flooding starts at the harbour seed (114.1735, 22.2915). Land is the unflooded empty cells, not the barrier cells, so the border does not stitch Hong Kong Island to Kowloon. The component that contains Central is `GEO.manhattan`. The component that contains Tsim Sha Tsui is `GEO.boroughs.newJersey[0]` (Kowloon, the opposite shore). Harbour water is the flooded component of the seed that lies within 1700 m of both shores. Named OSM water rings are appended when they do not contain Central or Tsim Sha Tsui. Piers are oriented boxes, 80–250000 m², within 90 m of either shore.
+
+The module matches the NYC `GEO` keys. Empty `streets`, `avenues`, `broadway`, `bridges`, and `landmarks`. `centralPark.bounds` is null. `frame.city` is `'hk'` (the NYC file leaves `city` unset). Block tuples keep the NYC shape and then append `[height, base, name]`.
+
+```bash
+# Sample streets, seven Statue Square footprints, harbour, piers. Writes js/hk-geodata.js.
+GEO_CITY=hk node tools/build-geodata.mjs
+
+# Harbour stage alone (same coast resolution as the build).
+node tools/geo-hk-extra.mjs
+
+node --test tests/hk-harbour.test.mjs tests/hk-geo.test.mjs tests/hk-blocks.test.mjs tests/hk-streets.test.mjs
+```
+
+The sample build reports Victoria Harbour about 13.33 km² between Island about 71.51 km² and Kowloon about 78.30 km², with 49 piers. Central is the origin. Tsim Sha Tsui is about (988, −1447). Admiralty is about (499, 169), on the island.
+
+### Boot switch
+
+`js/geo-source.js` picks the module. The default is New York. `index.html?city=hk` wins over `GEO_CITY`. Node accepts `hk`, `hongkong`, and `hong-kong`. The map paints `GEO.harbour.rings` in the pond colour before the land fill, so the shores cover overlap. The existing water plane stays. NYC landmark meshes are still built on the Hong Kong switch; a later cut stubs those.
+
+### Where you stand
+
+Walk, car, bike, and helicopter still spawn at `streetZ(37)`. Hong Kong has no numbered streets, so that fallback is `(42 − 37) × 79.5 = 397.5` m, about 400 m south of Statue Square, still on the island. The teleport menu is how to stand on a named place:
+
+| Button | Place | Lon, lat | Heading |
+|---|---|---|---|
+| Central | Statue Square | 114.15979, 22.28088 | π, face north toward the harbour |
+| Tsim Sha Tsui | Clock Tower | 114.16938, 22.29395 | 0, face south toward the island |
+| Admiralty | Admiralty MTR | 114.16463, 22.27935 | π, face north |
+
+Those buttons are hidden on the Manhattan page. `?city=hk` shows them and hides the Manhattan list.

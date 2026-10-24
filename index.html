@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Slop Hong Kong</title>
   <link rel="icon" href="data:," />
-  <meta name="description" content="Slop Hong Kong — a Hong Kong city simulation built with Three.js WebGPURenderer and TSL shaders. Third-person navigation (Person, Car, Cyclist, Helicopter) and cinematic cameras. This build still renders the upstream Manhattan map while Hong Kong geodata is in progress." />
+  <meta name="description" content="Slop Hong Kong — a Hong Kong city simulation built with Three.js WebGPURenderer and TSL shaders. Third-person navigation (Person, Car, Cyclist, Helicopter) and cinematic cameras. The default page still boots the Manhattan scene. Open index.html?city=hk to load Victoria Harbour." />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <!-- three.js dev branch (builds committed to mrdoob/three.js@dev, served by jsDelivr) -->
   <script type="importmap">
@@ -158,6 +158,9 @@
     <button id="tp-flatiron" class="pop-item tp-btn" data-teleport="flatiron" type="button"><span class="pop-name">Flatiron Building</span><span class="pop-sub">5th Ave · Flatiron District</span></button>
     <button id="tp-centralpark" class="pop-item tp-btn" data-teleport="centralpark" type="button"><span class="pop-name">Central Park</span><span class="pop-sub">6th Ave · Central Park South</span></button>
     <button id="tp-owtc" class="pop-item tp-btn" data-teleport="owtc" type="button"><span class="pop-name">One World Trade Center</span><span class="pop-sub">Vesey St · Financial District</span></button>
+    <button id="tp-central" class="pop-item tp-btn" data-teleport="central" data-city="hk" type="button" hidden><span class="pop-name">Central</span><span class="pop-sub">Statue Square · facing the harbour</span></button>
+    <button id="tp-tst" class="pop-item tp-btn" data-teleport="tst" data-city="hk" type="button" hidden><span class="pop-name">Tsim Sha Tsui</span><span class="pop-sub">Clock Tower · facing the island</span></button>
+    <button id="tp-admiralty" class="pop-item tp-btn" data-teleport="admiralty" data-city="hk" type="button" hidden><span class="pop-name">Admiralty</span><span class="pop-sub">Admiralty MTR</span></button>
   </div>
 
   <!-- Bottom-Left: Street-Name Signs & Live GPS Radar Minimap -->
@@ -255,7 +258,7 @@
     <button id="cam-drone" class="pop-item cam-btn" data-camera="drone" type="button"><span class="pop-name">Auto-Director Aerial</span></button>
   </div>
 
-  <!-- Full-screen street map ([M]). This build still draws the upstream Manhattan atlas. -->
+  <!-- Full-screen street map ([M]). The default boot draws the Manhattan atlas. ?city=hk draws the Hong Kong frame. -->
   <section id="fullmap-modal" class="fullmap-modal hidden" role="dialog" aria-modal="true" aria-label="Full Hong Kong street map">
     <div id="fullmap-canvas-wrap" class="fullmap-canvas-wrap">
       <canvas id="fullmap-canvas"></canvas>
