@@ -2,6 +2,9 @@
 // Manhattan and the diagonal/curving roads farther north, js/road-network.js). Every at-grade street piece of the CSCL
 // runs between two nodes (intersections, dead ends, attribute changes): its ends become graph nodes (merged within
 // 1 m) and the piece a link with its curb-to-curb width, travel lanes and direction of travel.
+// Hong Kong does not use this file. GEO_CITY=hk builds the same link tuple from LandsD Road Centreline plus OSM
+// highways in tools/geo-hk-streets.mjs (no 14th Street cutoff, no Broadway / numbered-avenue list). Importing this
+// module also loads the Manhattan block builder.
 import { cscl, segLines, toWorld, rdp, log } from './geo-base.mjs';
 import { STREETS } from './geo-streets.mjs';
 import { CUT_Z } from './geo-blocks.mjs';

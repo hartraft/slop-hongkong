@@ -54,7 +54,7 @@ export const LANDSD = Object.freeze({
     where: '1=1',
     file: 'landsd-roads.geojson',
     sampleFile: 'statue-square-roads.geojson',
-    note: 'Road Centreline. Annotation-grade stand-in for a street centreline. Later cuts build the road graph from it.'
+    note: 'Road Centreline. Annotation-grade stand-in for CSCL. The street graph pairs it with OSM highways for class, lanes, width, and gaps.'
   })
 });
 

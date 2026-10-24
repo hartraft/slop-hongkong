@@ -5,7 +5,8 @@
 // GEO_CITY unset or nyc (default): Manhattan grid. Origin is the centreline intersection of 5th Ave & 42nd St.
 //   Bearing starts at 29.017° and is refined from the avenues. This path reads NYC Open Data.
 // GEO_CITY=hk: Central / Statue Square–Chater, true north. Does not read CSCL or DCP.
-//   Streets and blocks for Hong Kong are later cuts. See docs/HK_GEO_PIPELINE.md.
+//   The street graph is tools/geo-hk-streets.mjs (LandsD Road Centreline + OSM highways).
+//   Blocks stay on the Manhattan builder until Cut 3. See docs/HK_GEO_PIPELINE.md.
 //
 // NYC inputs (tools/data/, required only when GEO_CITY is nyc):
 //   dcp_boroughs.json       NYC DCP Borough Boundaries (water areas excluded)  data.cityofnewyork.us gthc-hcne

@@ -145,7 +145,7 @@ test('FeatureServer reads retry a failed response', async () => {
 });
 
 test('Hong Kong Overpass queries use the Island + Kowloon bbox and the NYC queries stay', () => {
-  for (const name of ['q_hk_coast.overpassql', 'q_hk_parks.overpassql', 'q_hk_landmarks.overpassql', 'q_hk_piers.overpassql']) {
+  for (const name of ['q_hk_coast.overpassql', 'q_hk_parks.overpassql', 'q_hk_landmarks.overpassql', 'q_hk_piers.overpassql', 'q_hk_highways.overpassql']) {
     const text = fs.readFileSync(path.join(root, 'tools/data', name), 'utf8');
     assert.match(text, new RegExp(BBOX.replace(/[.]/g, '\\.')));
     assert.doesNotMatch(text, /40\.7/);
@@ -155,6 +155,15 @@ test('Hong Kong Overpass queries use the Island + Kowloon bbox and the NYC queri
   assert.match(fs.readFileSync(path.join(root, 'tools/data/q_hk_coast.overpassql'), 'utf8'), /natural"="coastline"/);
   assert.match(fs.readFileSync(path.join(root, 'tools/data/q_hk_coast.overpassql'), 'utf8'), /natural"="water"/);
   assert.match(fs.readFileSync(path.join(root, 'tools/data/q_hk_parks.overpassql'), 'utf8'), /leisure"="park"/);
+  assert.match(fs.readFileSync(path.join(root, 'tools/data/q_hk_highways.overpassql'), 'utf8'), /highway/);
+});
+
+test('pipeline dedupe text matches featureKey', () => {
+  const doc = fs.readFileSync(path.join(root, 'docs/HK_GEO_PIPELINE.md'), 'utf8');
+  assert.match(doc, /featureKey/);
+  assert.match(doc, /feature\.id/);
+  assert.match(doc, /properties\.OBJECTID/);
+  assert.doesNotMatch(doc, /deduped on `OBJECTID`/);
 });
 
 test('fetch arguments accept a sample run and an explicit bbox', () => {
@@ -207,16 +216,25 @@ test('GEO_CITY=hk loads the frame without CSCL or DCP', () => {
   fs.rmSync(empty, { recursive: true, force: true });
 });
 
-test('GEO_CITY=hk does not start the NYC geodata build', () => {
+test('GEO_CITY=hk builds streets and stops before blocks', () => {
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-build-'));
+  const boot = path.join(root, 'js/nyc-geodata.js');
+  const before = fs.statSync(boot).mtimeMs;
   const result = spawnSync(process.execPath, [path.join(root, 'tools/build-geodata.mjs')], {
     encoding: 'utf8',
     env: { ...process.env, GEO_CITY: 'hongkong', GEO_DATA: empty },
     timeout: 20000
   });
-  assert.equal(result.status, 2, result.stderr + result.stdout);
-  assert.match(result.stderr, /22\.28088/);
-  assert.match(result.stderr, /114\.15979/);
-  assert.match(result.stderr, /fetch-hk\.sh/);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const text = result.stderr + result.stdout;
+  assert.match(text, /22\.28088/);
+  assert.match(text, /114\.15979/);
+  assert.match(text, /centreline pieces/);
+  assert.match(text, /road graph/);
+  assert.match(text, /Cut 3/);
+  assert.match(text, /Cut 4/);
+  assert.doesNotMatch(text, /Unset GEO_CITY to rebuild/);
+  assert.equal(fs.statSync(boot).mtimeMs, before);
+  assert.equal(fs.existsSync(path.join(root, 'js/hk-geodata.js')), false);
   fs.rmSync(empty, { recursive: true, force: true });
 });

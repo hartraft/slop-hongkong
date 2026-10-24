@@ -1,18 +1,30 @@
 // tools/build-geodata.mjs — writes js/nyc-geodata.js (see geo-base.mjs for the frame and the data sources)
 // usage: GEO_DATA=tools/data node --max-old-space-size=8192 tools/build-geodata.mjs [out.js]
-// GEO_CITY=hk stops here. Hong Kong streets and blocks are later cuts; this file still builds the NYC boot geodata.
+// GEO_CITY=hk builds the Hong Kong street graph (LandsD centreline + OSM highways) and stops before blocks.
+// It does not write js/hk-geodata.js. Unset GEO_CITY to rebuild the NYC boot geodata.
 // The NYC modules load CSCL and DCP at import time, so they are imported only after the city check.
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { cityFrame, resolveCity } from './geo-frame.mjs';
 
 const cityId = resolveCity(process.env.GEO_CITY);
-if (cityId !== 'nyc') {
+if (cityId === 'hk') {
   const hk = cityFrame('hk');
+  const { pieces, hkRoadGraph, hkStreetReport } = await import('./geo-streets.mjs');
+  const report = hkStreetReport;
   console.error(`[geodata] GEO_CITY=${process.env.GEO_CITY} selects the Hong Kong frame (LAT0=${hk.LAT0}, LON0=${hk.LON0}, true north).`);
-  console.error('[geodata] This script builds the NYC boot geodata. Unset GEO_CITY to rebuild js/nyc-geodata.js.');
-  console.error('[geodata] Populate Hong Kong source data with: bash tools/fetch-hk.sh');
-  process.exit(2);
+  console.error(`[geodata] Streets: ${pieces.length} centreline pieces, road graph ${hkRoadGraph.nodes.length / 2} nodes / ${hkRoadGraph.links.length} links.`);
+  console.error(`[geodata] LandsD ${report.roadsFile}${report.usedSampleRoads ? ' (Statue Square sample)' : ''}.`);
+  if (report.osmFile) {
+    console.error(`[geodata] OSM highways ${report.osmFile}: ${report.osmWays} drivable ways, ${report.taggedFromOsm} centreline parts tagged, ${report.osmGapLinks} gap links.`);
+  } else {
+    console.error('[geodata] OSM highways file not found. LandsD geometry stays in the graph; class falls back to STREETTYPE. Fetch with: bash tools/fetch-hk.sh');
+  }
+  console.error('[geodata] Stopping before blocks. geo-blocks.mjs is still the Manhattan block builder (Cut 3). No hk-geodata module is written (Cut 4).');
+  process.exit(0);
+}
+if (cityId !== 'nyc') {
+  throw new Error(`Unhandled GEO_CITY ${cityId}`);
 }
 
 const { geo, toWorld, rdp, rdpRing, ringArea, bbox, load, log, centroid } = await import('./geo-base.mjs');

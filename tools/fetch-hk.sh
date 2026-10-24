@@ -11,6 +11,7 @@ usage: tools/fetch-hk.sh [--sample | --landsd-only | --osm-only] [extra args for
 --sample       refresh tools/data/hk/samples (Statue Square–Chater) and skip Overpass
 --landsd-only  FeatureServer extract into tools/data/hk/ (gitignored)
 --osm-only     run tools/data/q_hk_*.overpassql into tools/data/hk/osm_*.json
+               (coast, parks, landmarks, piers, and highways for the street graph)
 EOF
   exit 0
 fi
@@ -46,4 +47,6 @@ if [ "$OSM" = 1 ] && [ "$SAMPLE" = 0 ]; then
   bash "$ROOT/tools/overpass.sh" "$OUT/osm_parks.json" "$ROOT/tools/data/q_hk_parks.overpassql"
   bash "$ROOT/tools/overpass.sh" "$OUT/osm_landmarks.json" "$ROOT/tools/data/q_hk_landmarks.overpassql"
   bash "$ROOT/tools/overpass.sh" "$OUT/osm_piers.json" "$ROOT/tools/data/q_hk_piers.overpassql"
+  # Highways join the LandsD centreline in the street graph. The queries above stay the OSM fill roles.
+  bash "$ROOT/tools/overpass.sh" "$OUT/osm_highways.json" "$ROOT/tools/data/q_hk_highways.overpassql"
 fi

@@ -1,10 +1,10 @@
 # tools/data/hk
 
-Hong Kong source data for later geodata cuts. The sim does not read this directory yet.
+Hong Kong source data. The sim still boots `js/nyc-geodata.js`. `GEO_CITY=hk` reads the road centreline from this directory when building the street graph.
 
-- `samples/` — small Statue Square–Chater excerpt from LandsD, safe to commit. Refresh with `node tools/fetch-landsd.mjs --sample`.
-- `landsd-buildings.geojson` and `landsd-roads.geojson` — full Island + Kowloon extracts. Gitignored.
-- `osm_*.json` — Overpass fill from `tools/data/q_hk_*.overpassql`. Gitignored.
+- `samples/` — Statue Square–Chater LandsD excerpt, plus `statue-square-highways.json` (a few-metre offset of those centrelines, one extra way, and a footway the graph must ignore). Refresh the LandsD files with `node tools/fetch-landsd.mjs --sample`.
+- `landsd-buildings.geojson` and `landsd-roads.geojson` — full Island + Kowloon extracts. Gitignored. The street graph prefers `landsd-roads.geojson` over the sample.
+- `osm_*.json` — Overpass output from `tools/data/q_hk_*.overpassql`, including `osm_highways.json` for the street graph. Gitignored. A full centreline does not pair with the Statue Square highway fixture.
 
 ```bash
 bash tools/fetch-hk.sh
