@@ -3,47 +3,23 @@ import {
   ROADS,
   BLOCKS,
   NYC_LANDMARKS,
-  LANDMARK_SITES,
   ISLAND_BOUNDS,
   PLAY_BOUNDS,
   getIslandBoundsAtZ,
-  MANHATTAN_COASTLINE,
-  KOWLOON_COASTLINE,
-  WATERFRONT_PIERS,
-  NJ_SHORELINE_POLYGON,
-  BROOKLYN_POLYGONS,
-  QUEENS_POLYGONS,
-  BRONX_POLYGONS,
-  STATEN_ISLAND_POLYGON,
-  UPPER_MANHATTAN_POLYGON,
-  WESTCHESTER_POLYGON,
-  NASSAU_POLYGON,
-  ROOSEVELT_ISLAND_POLYGON,
-  GOVERNORS_ISLAND_POLYGON,
-  RANDALLS_ISLAND_POLYGON,
-  LIBERTY_ISLAND_POLYGON,
-  ELLIS_ISLAND_POLYGON,
-  MILL_ROCK_POLYGON,
-  EAST_RIVER_BRIDGES,
-  OUTER_BRIDGES,
   getLocationLabel,
   isTypingInField
 } from './city-config.js';
 
 // js/nyc-map.js
-// GTA 6-Style Live Radar Minimap + Full-Screen Interactive New York City Cartographic Atlas.
-// Synchronized 1:1 with the 3D world (1 unit = 1 m; x = Manhattan-grid east, z = grid south, so both maps are drawn
-// "grid north up", the way Manhattan's street map is read, 29° east of true north). They draw the very geography the
-// city is built from (GEO, from NYC Open Data & OpenStreetMap): Manhattan's bulkhead line and piers, every
-// curb island (block) with the building footprints standing on it, the parks, Central Park's meadows, water bodies &
-// drives, the shore highways, the real street centrelines (labelled along their course), the surrounding boroughs and
-// New Jersey, the harbour islands and the bridges.
+// Live radar and full-screen atlas, 1:1 with the 3D world (1 unit = 1 m, x = east, z = south).
+// Hong Kong is true north (GEO.frame.bearingDeg === 0). Land is GEO.hongKongIsland and GEO.kowloon,
+// water is GEO.harbour, streets are GEO.roads, lots are GEO.blocks.
 
 const FONT = '"Noto Sans TC", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const MIN_ZOOM = 0.015; // full map, pixels per metre: the whole harbour, Staten Island to the Bronx
 const MAX_ZOOM = 3.0; // single lots
 const RADAR_SCALE = 0.32; // radar pixels per metre on the ground (zooms out with altitude)
-const GRID_BEARING = (GEO.frame && GEO.frame.bearingDeg) || 29.02; // Manhattan's grid north, degrees east of true north
+const GRID_BEARING = GEO.frame && Number.isFinite(GEO.frame.bearingDeg) ? GEO.frame.bearingDeg : 0;
 
 // Map palette, shared by the radar & the atlas (in step with css/style.css): graphite ground with the streets a shade
 // lighter than the blocks they run between, muted parks & water; a taxi-yellow GPS route, white landmarks & player,
@@ -55,7 +31,7 @@ const MAP = {
   islands: '#162019',
   islandsEdge: '#26392c',
   piers: '#283039',
-  streets: '#363f4b', // Manhattan inside its bulkhead line: the roadway left between the blocks
+  streets: '#363f4b',
   shore: '#4f5b6b',
   park: '#19301f',
   parkEdge: '#24432f',
@@ -78,39 +54,14 @@ const MAP = {
   halo: 'rgba(8, 11, 15, 0.9)'
 };
 
-// Landmarks modelled by landmarks.js on their real OpenStreetMap lots (outlined in amber)
-const MODELLED_LANDMARKS = [
-  'Empire State Building', 'Chrysler Building', 'One Vanderbilt', 'Grand Central Terminal', 'MetLife Building',
-  'Stephen A. Schwarzman Building', 'One Times Square', '30 Rockefeller Plaza', 'Citigroup Center', 'Seagram Building',
-  'Flatiron Building', 'One World Trade Center', 'New York Stock Exchange'
-];
-
-// Borough (0), waterway (1) & neighbourhood (2) names at their real places (world metres)
-const AREA_LABELS = GEO.frame && GEO.frame.city === 'hk' ? [
+// Borough (0), waterway (1) and neighbourhood (2) names in world metres, true north.
+const AREA_LABELS = [
   ['香港', 2800, 1800, 0], ['香港島', 1600, 3400, 0], ['九龍', 2400, -4300, 0],
   ['維多利亞港', 2000, -900, 1],
   ['中環', 0, 90, 2], ['金鐘', 499, 240, 2], ['尖沙咀', 988, -1550, 2]
-] : [
-  ['MANHATTAN', 120, -1500, 0], ['NEW JERSEY', -7000, 2000, 0], ['BROOKLYN', 7850, 8780, 0], ['QUEENS', 8810, -1680, 0],
-  ['THE BRONX', 1010, -9640, 0], ['STATEN ISLAND', -1800, 19220, 0],
-  ['HUDSON RIVER', -2680, -300, 1], ['HUDSON RIVER', -2650, -5600, 1], ['EAST RIVER', 1700, 800, 1],
-  ['HARLEM RIVER', 220, -7930, 1], ['UPPER NEW YORK BAY', 130, 10530, 1],
-  ['HARLEM', -320, -6750, 2], ['MORNINGSIDE HEIGHTS', -1600, -6160, 2], ['EAST HARLEM', 830, -5820, 2],
-  ['UPPER WEST SIDE', -1410, -3070, 2], ['CENTRAL PARK', -430, -3280, 2], ['UPPER EAST SIDE', 590, -2680, 2],
-  ['ROOSEVELT ISLAND', 1810, -2030, 2], ["HELL'S KITCHEN", -1350, -590, 2], ['MIDTOWN', 100, -500, 2],
-  ['MURRAY HILL', 680, 330, 2], ['HUDSON YARDS', -1510, 770, 2], ['CHELSEA', -1030, 1650, 2],
-  ['FLATIRON · GRAMERCY', 330, 1660, 2], ['GREENWICH VILLAGE', -540, 2830, 2], ['EAST VILLAGE', 1250, 2800, 2],
-  ['SOHO', 200, 3560, 2], ['LOWER EAST SIDE', 1690, 3760, 2], ['TRIBECA', -140, 4460, 2], ['CHINATOWN', 850, 4420, 2],
-  ['BATTERY PARK CITY', -370, 5540, 2], ['FINANCIAL DISTRICT', 455, 5715, 2], ['GOVERNORS ISLAND', 795, 7685, 2],
-  ['LIBERTY ISLAND', -1234, 8849, 2], ['ELLIS ISLAND', -1427, 7648, 2], ["RANDALL'S ISLAND", 2268, -6301, 2],
-  ['WASHINGTON HEIGHTS', -1690, -10270, 2], ['DOWNTOWN BROOKLYN', 2570, 6280, 2], ['WILLIAMSBURG', 3670, 2980, 2],
-  ['GREENPOINT', 3305, 1277, 2], ['LONG ISLAND CITY', 2865, -473, 2], ['ASTORIA', 3345, -3699, 2],
-  ['HOBOKEN', -3293, 3032, 2], ['JERSEY CITY', -2671, 6014, 2], ['WEEHAWKEN', -3670, 193, 2], ['FORT LEE', -4456, -9911, 2],
-  ['RED HOOK', 2005, 8855, 2], ['BAYONNE', -5284, 13699, 2]
 ];
 
-// Shorter map names for a few real street names
-const LABEL_ALIAS = { 'Franklin D Roosevelt Dr': 'FDR Drive', 'Battery Park Underpass': 'Battery Underpass' };
+const LABEL_ALIAS = {};
 
 // ---------------------------------------------------------------------------------------------------------------------
 // World-space vector layers: built once into Path2D objects (world metres) and drawn through a canvas transform
@@ -217,71 +168,30 @@ let LAYERS = null;
 function mapLayers() {
   if (LAYERS) return LAYERS;
   const L = {};
-  const rings = (list) => list.filter((p) => p && p.length > 2);
+  const rings = (list) => (list || []).filter((p) => p && p.length > 2);
 
-  // Land around the harbour: New Jersey, Brooklyn, Queens, the Bronx, Staten Island and Upper Manhattan (outlined), the
-  // horizon fillers beyond the city line (not outlined); the East River & harbour islands
+  // Same rings the ground meshes use: Island + Kowloon, Victoria Harbour underneath.
   L.land = new Path2D();
-  for (const ring of rings([KOWLOON_COASTLINE, NJ_SHORELINE_POLYGON, ...(BROOKLYN_POLYGONS || []), ...(QUEENS_POLYGONS || []), ...(BRONX_POLYGONS || []),
-    STATEN_ISLAND_POLYGON, UPPER_MANHATTAN_POLYGON])) addRing(L.land, ring);
-  L.fillers = new Path2D();
-  for (const ring of rings([WESTCHESTER_POLYGON, NASSAU_POLYGON])) addRing(L.fillers, ring);
-  L.islands = new Path2D();
-  for (const ring of rings([RANDALLS_ISLAND_POLYGON, ROOSEVELT_ISLAND_POLYGON, GOVERNORS_ISLAND_POLYGON, LIBERTY_ISLAND_POLYGON,
-    ELLIS_ISLAND_POLYGON, MILL_ROCK_POLYGON])) addRing(L.islands, ring);
-  // Victoria Harbour (Hong Kong). The NYC module has no harbour key, so this path stays empty.
+  for (const ring of rings([GEO.hongKongIsland, GEO.kowloon])) addRing(L.land, ring);
   L.harbour = new Path2D();
-  for (const ring of rings((GEO.harbour && GEO.harbour.rings) || [])) addRing(L.harbour, ring);
+  for (const ring of rings(GEO.harbour && GEO.harbour.rings)) addRing(L.harbour, ring);
 
-  // Manhattan inside its bulkhead line, and its piers
-  L.manhattan = new Path2D();
-  addRing(L.manhattan, MANHATTAN_COASTLINE);
   L.piers = new Path2D();
-  for (const p of WATERFRONT_PIERS) if (p.ring) addRing(L.piers, p.ring);
+  for (const p of GEO.piers || []) if (p.ring) addRing(L.piers, p.ring);
 
-  // Parkland (NYC Parks properties), the curb islands (blocks: raised sidewalks & lots) and the park blocks, exactly
-  // as city-grid.js / buildings.js treat them
-  L.parkLand = new TiledLayer();
-  for (const park of GEO.parks || []) for (const ring of park.rings || []) L.parkLand.ring(ring);
+  L.parks = new TiledLayer();
+  for (const park of GEO.parks || []) for (const ring of park.rings || []) L.parks.ring(ring);
   L.blocks = new TiledLayer();
   L.parkBlocks = new TiledLayer();
   for (const b of BLOCKS) (b.park > 0.6 && !b.median ? L.parkBlocks : L.blocks).ring(b.poly);
 
-  // Central Park: meadows, water bodies, the drives and the sunken transverse roads
-  const cp = GEO.centralPark || {};
-  L.cpBounds = cp.bounds || null;
-  L.cpLawns = new Path2D();
-  for (const l of cp.lawns || []) addRing(L.cpLawns, l.ring);
-  L.cpWater = new Path2D();
-  for (const w of cp.water || []) addRing(L.cpWater, w.ring);
-  L.cpDrives = new Path2D();
-  L.cpTransverses = new Path2D();
-  for (const d of cp.drives || []) addLine(d.transverse ? L.cpTransverses : L.cpDrives, d.pts);
-
-  // Street network at low zoom (avenues & wide streets, once the gaps between blocks are under a pixel) and the shore
-  // highways (FDR Drive, West St / West Side Hwy, Harlem River Dr, Henry Hudson Pkwy)
-  L.mainRoads = new TiledLayer(1000);
-  L.highways = new Path2D();
+  // Every Hong Kong centreline, not a Manhattan avenue lattice. Highways stay a separate stroke.
+  L.roads = new TiledLayer(1000);
+  L.highways = new TiledLayer(1000);
   for (const r of ROADS) {
-    if (r.highway) {
-      if (!/Underpass|Tunnel/.test(r.name)) addLine(L.highways, r.pts);
-    } else if (r.w >= 15) L.mainRoads.line(r.pts);
+    if (!r.pts || r.pts.length < 2) continue;
+    (r.highway ? L.highways : L.roads).line(r.pts);
   }
-
-  // Landmark lots
-  L.landmarks = new Path2D();
-  for (const name of MODELLED_LANDMARKS) {
-    const s = LANDMARK_SITES[name];
-    if (s && s.ring) addRing(L.landmarks, s.ring);
-  }
-
-  // Bridges, Manhattan landing to the far landing, deck width to scale
-  L.bridges = [...EAST_RIVER_BRIDGES, ...OUTER_BRIDGES].map((br) => {
-    const path = new Path2D();
-    path.moveTo(br.a.x, br.a.z);
-    path.lineTo(br.b.x, br.b.z);
-    return { path, width: br.width || 25 };
-  });
 
   LAYERS = L;
   return L;
@@ -460,7 +370,7 @@ class NYCMapSystem {
     const elCounts = document.getElementById('fullmap-counts');
     if (elCounts) elCounts.textContent = `${ROAD_NAME_COUNT} 條街道 · ${BLOCKS.length.toLocaleString('zh-Hant')} 個街段`;
 
-    // The map is drawn grid north up; the compass needle points to true north, 29° to its left
+    // True north is up. The compass needle matches GEO.frame.bearingDeg (0 in Hong Kong).
     const needle = document.getElementById('map-compass-needle');
     if (needle) needle.setAttribute('transform', `rotate(${-GRID_BEARING} 22 22)`);
 
@@ -547,7 +457,7 @@ class NYCMapSystem {
     }
     if (fullIslandBtn) {
       fullIslandBtn.addEventListener('click', () => {
-        // Fits all of Manhattan, from the Harlem River to the Battery
+        // Island + Kowloon + Victoria Harbour
         const b = PLAY_BOUNDS || ISLAND_BOUNDS;
         const { w, h } = this.fullSize();
         this.viewCenterX = (b.minX + b.maxX) * 0.5;
@@ -770,47 +680,28 @@ class NYCMapSystem {
   }
 
   /**
-   * The ground: land & water, Manhattan with its piers, parkland, blocks, Central Park, building footprints, landmark
-   * lots, the main streets at low zoom, shore highways, bridges and the search highlight (world transform of view v)
+   * Harbour, Island + Kowloon, parks, lots, and the Hong Kong centreline.
+   * Radar and the full atlas share this draw, in world metres.
    */
   drawWorld(ctx, v, isMinimap) {
     const L = mapLayers();
     const s = v.s;
-    const px = (n) => n / s; // screen pixels -> metres (line widths)
+    const px = (n) => n / s;
     v.world(ctx);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
 
-    // Victoria Harbour under the shores, so Island and Kowloon cover any overlap. Empty on the NYC boot.
     ctx.fillStyle = MAP.pond;
     ctx.fill(L.harbour);
 
-    // 1. Land around the harbour & the islands
     ctx.fillStyle = MAP.land;
-    ctx.fill(L.fillers);
     ctx.fill(L.land);
-    ctx.fillStyle = MAP.islands;
-    ctx.fill(L.islands);
-    if (!isMinimap) {
-      ctx.lineWidth = px(1.4);
-      ctx.strokeStyle = MAP.landEdge;
-      ctx.stroke(L.land);
-      ctx.strokeStyle = MAP.islandsEdge;
-      ctx.stroke(L.islands);
-    }
-
-    // 2. Piers, then Manhattan (roadway deck colour: the streets are the gaps between the blocks) in its bulkhead line
-    ctx.fillStyle = MAP.piers;
-    ctx.fill(L.piers);
-    ctx.fillStyle = MAP.streets;
-    ctx.fill(L.manhattan);
     ctx.strokeStyle = MAP.shore;
     ctx.lineWidth = px(isMinimap ? 1.6 : 2.0);
-    ctx.stroke(L.manhattan);
+    ctx.stroke(L.land);
 
-    // 3. Parkland, blocks (curb islands) and park blocks
     ctx.fillStyle = MAP.park;
-    L.parkLand.each(v, (p) => ctx.fill(p));
+    L.parks.each(v, (p) => ctx.fill(p));
     ctx.fillStyle = MAP.block;
     L.blocks.each(v, (p) => ctx.fill(p));
     if (s >= 0.22) {
@@ -820,30 +711,7 @@ class NYCMapSystem {
     }
     ctx.fillStyle = MAP.park;
     L.parkBlocks.each(v, (p) => ctx.fill(p));
-    if (s >= 0.1) {
-      ctx.strokeStyle = MAP.parkEdge;
-      ctx.lineWidth = px(1);
-      L.parkBlocks.each(v, (p) => ctx.stroke(p));
-    }
 
-    // 4. Central Park: meadows, drives & transverses, water bodies
-    if (v.sees(L.cpBounds)) {
-      ctx.fillStyle = MAP.lawn;
-      ctx.fill(L.cpLawns);
-      ctx.strokeStyle = MAP.drive;
-      ctx.lineWidth = Math.max(px(1), 7);
-      ctx.stroke(L.cpDrives);
-      ctx.strokeStyle = MAP.transverse;
-      ctx.lineWidth = Math.max(px(1), 10);
-      ctx.stroke(L.cpTransverses);
-      ctx.fillStyle = MAP.pond;
-      ctx.fill(L.cpWater);
-      ctx.strokeStyle = MAP.pondEdge;
-      ctx.lineWidth = px(1);
-      ctx.stroke(L.cpWater);
-    }
-
-    // 5. Building footprints, lowest first
     if (s >= 0.18) {
       const fp = footprintLayers(this.allBlocks);
       if (fp) {
@@ -851,47 +719,19 @@ class NYCMapSystem {
           ctx.fillStyle = MAP.buildings[i];
           fp.tones[i].each(v, (p) => ctx.fill(p));
         }
-        if (s >= 0.6) {
-          ctx.strokeStyle = MAP.buildingEdge;
-          ctx.lineWidth = px(0.8);
-          for (let i = 0; i < 3; i++) fp.tones[i].each(v, (p) => ctx.stroke(p));
-        }
       }
     }
 
-    // 6. Landmark lots (real OpenStreetMap outlines)
-    if (s >= 0.05) {
-      ctx.fillStyle = MAP.block;
-      ctx.fill(L.landmarks);
-      ctx.fillStyle = MAP.landmarkFill;
-      ctx.fill(L.landmarks);
-      ctx.strokeStyle = MAP.landmarkEdge;
-      ctx.lineWidth = px(Math.max(0.9, Math.min(1.6, 1.4 * s)));
-      ctx.stroke(L.landmarks);
-    }
+    ctx.fillStyle = MAP.piers;
+    ctx.fill(L.piers);
 
-    // 7. Main streets as lines at low zoom
-    if (s < 0.16) {
-      ctx.strokeStyle = MAP.mainRoads;
-      ctx.lineWidth = px(s < 0.05 ? 0.7 : 1.1);
-      L.mainRoads.each(v, (p) => ctx.stroke(p));
-    }
-
-    // 8. Shore highways
+    ctx.strokeStyle = MAP.streets;
+    ctx.lineWidth = Math.max(px(1.15), 6.5);
+    L.roads.each(v, (p) => ctx.stroke(p));
     ctx.strokeStyle = MAP.highway;
-    ctx.lineWidth = Math.max(px(isMinimap ? 2.4 : 1.6), 14);
-    ctx.stroke(L.highways);
+    ctx.lineWidth = Math.max(px(1.5), 12);
+    L.highways.each(v, (p) => ctx.stroke(p));
 
-    // 9. Bridges
-    ctx.strokeStyle = MAP.bridge;
-    ctx.lineCap = 'butt';
-    for (const br of L.bridges) {
-      ctx.lineWidth = Math.max(px(2), br.width);
-      ctx.stroke(br.path);
-    }
-    ctx.lineCap = 'round';
-
-    // 10. Search highlight: every stretch of the matching streets
     if (this.searchPath && !isMinimap) {
       ctx.strokeStyle = MAP.search;
       ctx.lineWidth = Math.max(px(3), 9);
@@ -1189,7 +1029,7 @@ class NYCMapSystem {
     ctx.fillStyle = MAP.water;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-    // 2. The ground: boroughs, islands, Manhattan's blocks, parks, footprints, highways & bridges
+    // 2. Harbour, coast, lots, and Hong Kong roads
     this.drawWorld(ctx, v, false);
 
     v.screen(ctx);

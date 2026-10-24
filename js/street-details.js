@@ -104,7 +104,7 @@ function createWalkSignalMaterial(clock) {
 
 function buildStreetDetails(scene) {
   const group = new THREE.Group();
-  group.name = 'ManhattanStreetDetails';
+  group.name = 'HongKongStreetDetails';
   scene.add(group);
   return { group, footprints: [], signalClock: uniform(0), audioSignals: [], update() {} };
 }

@@ -52,6 +52,7 @@ import {
   streetZ
 } from './city-config.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GEO } from './geo-source.js';
 
 // js/boroughs.js
 // The rest of New York City around the simulated Manhattan grid, at true 1:1 scale on the real geography (1 unit = 1 m,
@@ -682,7 +683,9 @@ function paintLandUse() {
   luBlur(1);
 }
 
-paintLandUse();
+// Hong Kong boot keeps this raster empty. The paint is Staten Island, Liberty,
+// the Palisades, and the other New York land-use layers.
+if (GEO.frame.city !== 'hk') paintLandUse();
 
 const landUseTexture = new THREE.DataTexture(luData, LU.w, LU.h, THREE.RGBAFormat);
 landUseTexture.magFilter = THREE.LinearFilter;
@@ -777,7 +780,8 @@ function paintZones() {
     }
   }
 }
-paintZones();
+// Same gate: neighbourhood grids are the New York borough street carpets.
+if (GEO.frame.city !== 'hk') paintZones();
 
 const zoneTexture = new THREE.DataTexture(zoneData, LU.w, LU.h, THREE.RedFormat, THREE.UnsignedByteType);
 zoneTexture.magFilter = THREE.NearestFilter;
@@ -3349,30 +3353,12 @@ function createLandmarkMaterials() {
  * columns, deck ends too low to drive under).
  */
 function buildHkHarbourLand(scene) {
+  // Island and Kowloon coast meshes live in the city grid. This group stays empty so
+  // the New York borough, bridge, and Liberty builders never run.
   const group = new THREE.Group();
   group.name = 'Boroughs';
-  const landMat = new THREE.MeshStandardNodeMaterial({
-    color: 0x6e7b63,
-    roughness: 0.94,
-    metalness: 0
-  });
-  landMat.name = 'hkHarbourLand';
-  const { topGeo, wallGeo } = buildLandGeometries();
-  const topCount = topGeo.getAttribute('position') ? topGeo.getAttribute('position').count : 0;
-  if (topCount > 0) {
-    const landMesh = new THREE.Mesh(topGeo, landMat);
-    landMesh.name = 'BoroughLand';
-    landMesh.receiveShadow = true;
-    group.add(landMesh);
-  }
-  const wallCount = wallGeo.getAttribute('position') ? wallGeo.getAttribute('position').count : 0;
-  if (wallCount > 0) {
-    const wallMesh = new THREE.Mesh(wallGeo, createBulkheadMaterial());
-    wallMesh.name = 'BoroughBulkheads';
-    group.add(wallMesh);
-  }
   scene.add(group);
-  console.info(`[boroughs] HK coast land only (${topCount} land verts). NYC grids, Palisades, Liberty, bridges skipped`);
+  console.info('[boroughs] HK coast is the city-grid ground. NYC grids, Palisades, Liberty, bridges skipped');
   return { group, ridgeHeightAt, landAt, colliders: [], update() {} };
 }
 

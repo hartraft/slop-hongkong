@@ -21,6 +21,7 @@ import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { SunLight } from 'three/addons/lights/SunLight.js';
 import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
 import { cityUniforms } from './tsl-materials.js';
+import { PLAY_BOUNDS } from './city-config.js';
 
 // js/lighting.js
 // Physically-Based Atmospheric Sky (Preetham SkyMesh + Beer-Powder Clouds),
@@ -148,7 +149,10 @@ class LightingSystem {
       renderer.library.addLight(SunLightNode, SunLight);
     }
 
-    this.scene.fog = new THREE.FogExp2(0xdcc5ae, 0.00024);
+    // Fade across Island + Kowloon + Victoria Harbour, not a Manhattan-length island.
+    const playSpan = Math.hypot(PLAY_BOUNDS.maxX - PLAY_BOUNDS.minX, PLAY_BOUNDS.maxZ - PLAY_BOUNDS.minZ);
+    this.harbourFogScale = (2 / Math.max(playSpan, 1)) / TIME_PRESETS.golden.fogDensity;
+    this.scene.fog = new THREE.FogExp2(0xdcc5ae, TIME_PRESETS.golden.fogDensity * this.harbourFogScale);
     // Leave scene.background = null because SkyMesh renders the 360° sky dome, and setting
     // a THREE.Color on scene.background sets forceClear=true in WebGPURenderer's Background.update,
     // which would otherwise clear Cascade 0 when rendering Cascade 1 in SunShadowNode!
@@ -226,7 +230,7 @@ class LightingSystem {
     // Sky-matched aerial perspective (replaces the flat FogExp2 colour): distant surfaces fade into the baked sky
     // radiance just above the horizon in their view direction (sun glow included), through an exponential haze layer
     // so helicopter / observatory views stay clearer than the horizon.
-    this.uFogDensity = uniform(TIME_PRESETS.golden.fogDensity);
+    this.uFogDensity = uniform(TIME_PRESETS.golden.fogDensity * this.harbourFogScale);
     this.uFogHeight = uniform(900.0);
     if (this.envRenderTarget) this.scene.fogNode = this.createAerialFogNode();
   }
@@ -280,8 +284,9 @@ class LightingSystem {
     this.hemiLight.intensity = p.hemiIntensity;
 
     this.scene.fog.color.setHex(p.fogColor);
-    this.scene.fog.density = p.fogDensity;
-    if (this.uFogDensity) this.uFogDensity.value = p.fogDensity;
+    const fogDensity = p.fogDensity * (this.harbourFogScale || 1);
+    this.scene.fog.density = fogDensity;
+    if (this.uFogDensity) this.uFogDensity.value = fogDensity;
 
     // Update physical Preetham SkyMesh uniforms
     this.sky.turbidity.value = p.turbidity;

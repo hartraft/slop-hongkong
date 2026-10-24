@@ -262,7 +262,7 @@ function carve(r, holes, axis = 'x') {
 // filler only walks rects/frames and then invents storeys, water towers and fire escapes.
 function buildHkFootprintBlocks(scene) {
   const group = new THREE.Group();
-  group.name = 'ManhattanCityBlocks';
+  group.name = 'HongKongCityBlocks';
   const colliders = [];
   const allBlocks = [];
   const lots = [];
