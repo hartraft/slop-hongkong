@@ -73,7 +73,7 @@ async function initApp() {
     loadingStatus.textContent = '正在建構香港街道、海岸與樓宇…';
   }
 
-  // 3. Build Manhattan Geography, Iconic Landmarks, Blocks, Street Details & Traffic
+  // 3. Hong Kong coast, footprint blocks, empty landmark slots, street details, and traffic
   const cityGrid = buildCityGrid(scene);
   markInit('cityGrid');
   const boroughs = buildBoroughs(scene, { sidewalks: cityGrid.sidewalks });

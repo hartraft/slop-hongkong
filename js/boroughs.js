@@ -46,11 +46,11 @@ import {
   ROOSEVELT_ISLAND_POLYGON,
   GOVERNORS_ISLAND_POLYGON,
   MILL_ROCK_POLYGON,
+  KOWLOON_COASTLINE,
   EAST_RIVER_BRIDGES,
   OUTER_BRIDGES,
   streetZ
 } from './city-config.js';
-import { GEO } from './geo-source.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // js/boroughs.js
@@ -279,6 +279,7 @@ function addLand(id, pts, top, extra = {}) {
 }
 const mainRing = (rings) => rings.reduce((a, r) => (r.length > a.length ? r : a), rings[0]);
 addLand('nj', NJ_SHORELINE_POLYGON, 0.0, { borough: 'nj' });
+addLand('kowloon', KOWLOON_COASTLINE, 0.0, { borough: 'kowloon' });
 addLand('li', LONG_ISLAND_POLYGONS[0], 0.0, { borough: 'brooklyn' });
 addLand('li', LONG_ISLAND_POLYGONS[1], 0.0, { borough: 'queens' });
 addLand('upper', UPPER_MANHATTAN_POLYGON, -0.02, { borough: 'upper' });
@@ -3368,8 +3369,11 @@ function buildHkHarbourLand(scene) {
   return { group, ridgeHeightAt, landAt, colliders: [], update() {} };
 }
 
-function buildBoroughs(scene, { sidewalks = [] } = {}) {
-  if (GEO.frame && GEO.frame.city === 'hk') return buildHkHarbourLand(scene);
+function buildBoroughs(scene) {
+  return buildHkHarbourLand(scene);
+}
+
+function buildNycBoroughs(scene, { sidewalks = [] } = {}) {
   const t0 = performance.now();
   const group = new THREE.Group();
   group.name = 'Boroughs';

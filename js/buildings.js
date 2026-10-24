@@ -334,7 +334,10 @@ function buildHkFootprintBlocks(scene) {
 }
 
 function buildCityBlocks(scene) {
-  if (GEO.frame && GEO.frame.city === 'hk') return buildHkFootprintBlocks(scene);
+  return buildHkFootprintBlocks(scene);
+}
+
+function buildNycCityBlocks(scene) {
   const group = new THREE.Group();
   group.name = 'ManhattanCityBlocks';
   const colliders = [];

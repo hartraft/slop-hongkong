@@ -29,6 +29,7 @@ import {
   ISLAND_BOUNDS,
   CENTRAL_PARK_BOUNDS,
   getIslandBoundsAtZ,
+  HONG_KONG_ISLAND_COASTLINE,
   MANHATTAN_COASTLINE,
   WATERFRONT_PIERS,
   BLOCKS,
@@ -59,6 +60,9 @@ import {
   createTunnelShadeMaterial
 } from './tsl-materials.js';
 import { GEO } from './geo-source.js';
+
+// Times Square, Central Park, Castle Clinton, and the Manhattan shore highways are not built.
+const NYC_GRID_DECOR = false;
 
 // Live construction data consumed by the building and street-detail builders after buildCityGrid().
 let centralParkClearings;
@@ -1578,17 +1582,14 @@ function buildCityGrid(scene) {
     metalness: 0.08
   });
 
-  // Slightly expanded perimeter polygon for the granite seawall & waterfront esplanade coping
-  const seawallPolygon = MANHATTAN_COASTLINE.map((p) => ({
-    x: p.x + (p.x < -100 ? -6 : (p.x > 100 ? 6 : 0)),
-    z: p.z + (p.z > 1350 ? 6 : (p.z < -1550 ? -6 : 0))
-  }));
-  const seawallMesh = createExtrudedPolygonMesh(seawallPolygon, -2.35, 2.31, seawallMat, true, false);
+  // Hong Kong Island bulkhead. Step 2 replaces this deck with coast + road ribbons.
+  const seawallMesh = createExtrudedPolygonMesh(HONG_KONG_ISLAND_COASTLINE, -2.35, 2.31, seawallMat, true, false);
+  seawallMesh.name = 'HongKongIslandSeawall';
   group.add(seawallMesh);
 
-  // Unified Manhattan Roadway Asphalt Deck (Y = 0.0) following true Manhattan coastline
   const roadMat = createRoadSurfaceMaterial();
-  const roadMesh = createFlatPolygonMesh(MANHATTAN_COASTLINE, 0.0, roadMat, true);
+  const roadMesh = createFlatPolygonMesh(HONG_KONG_ISLAND_COASTLINE, 0.0, roadMat, true);
+  roadMesh.name = 'HongKongIslandGround';
   group.add(roadMesh);
 
   // =========================================================================
@@ -1744,6 +1745,7 @@ function buildCityGrid(scene) {
   // cross streets, which carry on across them): Times Square's bowtie where Broadway crosses 7th Ave (42nd-47th St)
   // and Herald Square where it crosses 6th Ave (33rd-35th St). Each strip is cut into the pieces between the cross
   // streets and either side of the avenue it crosses.
+  if (NYC_GRID_DECOR) {
   const PLAZA_DEFS = GEO.plazas;
   const streetHalf = (n) => {
     const st = ALL_STREETS.find((t) => t.number === n);
@@ -1873,6 +1875,7 @@ function buildCityGrid(scene) {
     addLamp(bx.cx - 5.5, PLAZA_Y, pc.zN + 3);
     addLamp(bx.cx + 5.5, PLAZA_Y, pc.zS - 3);
   }
+  }
 
   // =========================================================================
   // 7. CENTRAL PARK (59th to 110th St, 5th Ave to Central Park West) from its real features (city-config.js GEO:
@@ -1901,7 +1904,7 @@ function buildCityGrid(scene) {
     roughness: 0.62
   });
 
-  if (GEO.frame.city !== 'hk') {
+  if (NYC_GRID_DECOR) {
   const CPG = GEO.centralPark;
   const flatPts = (flat) => {
     const o = [];
@@ -2597,16 +2600,9 @@ function buildCityGrid(scene) {
   // cruise terminals, Chelsea Piers, Pier 57, Little Island, Pier 40, the Intrepid, the 79th St Boat Basin,
   // Pier 17, the Wavertree, Pier 15, Pier 11 and the Staten Island Ferry Whitehall Terminal (see buildWaterfrontPiers)
   let highwayLanes = [];
-  if (GEO.frame.city === 'hk') {
-    // Centreline ribbons from GEO.roads and OSM pier decks. No FDR / West Side Highway lattice.
-    buildHkRoadRibbons(group);
-    buildHkPierDecks(group);
-  } else {
-    buildWaterfrontPiers(group);
-    // 9 & 10. The East River bridges, harbor islands and the surrounding boroughs are built by boroughs.js
-    // 11. Manhattan's waterfront edge: esplanades, shore highways & riverside park belts (see buildManhattanWaterfrontEdge)
-    highwayLanes = buildManhattanWaterfrontEdge(group, { blockSidewalks, treeSites, lawnMat: cpLawnMat, curbMat, roadMat });
-  }
+  // Centreline ribbons from GEO.roads and OSM pier decks. No FDR / West Side Highway lattice.
+  buildHkRoadRibbons(group);
+  buildHkPierDecks(group);
 
   // Batch static sub-meshes by material to reduce per-frame WebGPU draw calls
   batchStaticGroupMeshes(group, new Set([waterMat, roadMat, cpLawnMat, cpMeadowMat]));

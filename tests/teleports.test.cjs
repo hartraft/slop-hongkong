@@ -43,10 +43,12 @@ test('Hong Kong teleports are Central, Tsim Sha Tsui, and Admiralty', () => {
 
 test('Hong Kong boot does not build Manhattan landmark meshes', () => {
   const landmarks = read('js/landmarks.js');
-  const gate = landmarks.indexOf("GEO.frame && GEO.frame.city === 'hk'");
+  const boot = landmarks.indexOf('function buildLandmarks');
+  const nyc = landmarks.indexOf('function buildNycLandmarks');
   const meshes = landmarks.indexOf("group.name = 'ManhattanLandmarks'");
-  assert.ok(gate > 0 && gate < meshes, 'the Hong Kong return happens before any landmark mesh');
-  assert.match(landmarks.slice(gate, meshes), /return \{ colliders: \[\] \}/);
+  assert.ok(boot > 0 && nyc > boot && meshes > nyc, 'the boot function returns before any landmark mesh');
+  assert.match(landmarks.slice(boot, nyc), /return \{ colliders: \[\] \}/);
+  assert.doesNotMatch(landmarks.slice(boot, nyc), /ManhattanLandmarks/);
 });
 
 test('preset and map teleports share arrival resets and mark the resolved landing point', () => {

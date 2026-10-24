@@ -154,11 +154,13 @@ const STREETS = GEO.frame.city === 'hk' ? [] : [
 const CENTRAL_PARK_BOUNDS = { ...(GEO.centralPark.bounds || { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }) };
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Shoreline: Hong Kong Island (GEO.manhattan) and, when present, Kowloon (GEO.boroughs.newJersey).
+// Shoreline: Hong Kong Island (GEO.hongKongIsland) and Kowloon (GEO.kowloon).
 // West / east x at a given z are the outermost bulkhead crossings of one landmass.
 // ---------------------------------------------------------------------------------------------------------------------
-const MANHATTAN_COASTLINE = toPts(GEO.manhattan);
-const KOWLOON_COASTLINE = GEO.boroughs.newJersey[0] ? toPts(GEO.boroughs.newJersey[0]) : [];
+const HONG_KONG_ISLAND_COASTLINE = toPts(GEO.hongKongIsland);
+const KOWLOON_COASTLINE = Array.isArray(GEO.kowloon) && GEO.kowloon.length ? toPts(GEO.kowloon) : [];
+// Same ring as HONG_KONG_ISLAND_COASTLINE. The export name is kept for modules Step 6 still has to purge.
+const MANHATTAN_COASTLINE = HONG_KONG_ISLAND_COASTLINE;
 function buildShore(P) {
   if (!P || P.length < 3) return null;
   const step = 2;
@@ -192,7 +194,7 @@ function buildShore(P) {
   for (let k = n - 2; k >= 0; k--) if (Number.isNaN(west[k])) { west[k] = west[k + 1]; east[k] = east[k + 1]; }
   return { z0, step, n, west, east, z1 };
 }
-const SHORE = buildShore(MANHATTAN_COASTLINE);
+const SHORE = buildShore(HONG_KONG_ISLAND_COASTLINE);
 const KOWLOON_SHORE = buildShore(KOWLOON_COASTLINE);
 
 function sampleShore(shore, z) {
@@ -298,7 +300,8 @@ const LIBERTY_STATUE_POS = GEO.points.statueOfLiberty
   ? { x: GEO.points.statueOfLiberty[0], z: GEO.points.statueOfLiberty[1] }
   : { x: 1e6, z: 1e6 };
 const biggestRing = (rings) => (rings && rings.length ? rings.reduce((a, r) => (r.length > a.length ? r : a), rings[0]) : []);
-const NJ_SHORELINE_POLYGON = GEO.boroughs.newJersey[0] ? toPts(GEO.boroughs.newJersey[0]) : [];
+// Kowloon is not New Jersey. An empty ring keeps the old west-shore readers from painting a Hudson shore.
+const NJ_SHORELINE_POLYGON = [];
 const BROOKLYN_POLYGONS = GEO.boroughs.brooklyn.map(toPts);
 const QUEENS_POLYGONS = GEO.boroughs.queens.map(toPts);
 const BRONX_POLYGONS = GEO.boroughs.bronx.map(toPts);
@@ -581,65 +584,14 @@ function blocksInRect(minX, maxX, minZ, maxZ) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Neighbourhoods (by real street & avenue positions) for building profiles, labels & the maps
+// Neighbourhoods from the Hong Kong coast rings. Numbered Manhattan streets are not districts.
 // ---------------------------------------------------------------------------------------------------------------------
-const Z = (n) => streetZ(n);
-const XA = (id) => avenueX(id);
-const HOUSTON_Z = 3376; // at Broadway
-const CANAL_Z = 4169;
-const CHAMBERS_Z = 4859;
 function districtAt(x, z) {
-  if (GEO.frame.city === 'hk') {
-    // Harbour / CBD from the coast rings. Do not call streetZ or avenueX: those still
-    // fall back to numbered Manhattan streets when GEO.streets is empty.
-    if (pointInPoly(MANHATTAN_COASTLINE, x, z)) return Math.hypot(x, z) < 1200 ? 'hk_cbd' : 'hk_island';
-    if (KOWLOON_COASTLINE.length && pointInPoly(KOWLOON_COASTLINE, x, z)) return 'hk_kowloon';
-    return 'hk_harbour';
-  }
-  const cp = CENTRAL_PARK_BOUNDS;
-  if (x > cp.minX && x < cp.maxX && z > cp.minZ && z < cp.maxZ) return 'central_park';
-  if (z < Z(110)) {
-    if (x < XA('manhattan') - 30) return 'morningside';
-    if (x > XA('5') + 10) return 'east_harlem';
-    return 'harlem';
-  }
-  if (z < Z(96) && x > XA('5') + 10) return 'east_harlem';
-  if (z < Z(59)) return x < cp.minX ? 'uws' : 'ues';
-  if (z < Z(34)) {
-    if (x < XA('8') - 20) return z > Z(42) && x < XA('10') - 20 ? 'hudson_yards' : 'hells_kitchen';
-    if (x > XA('3') + 20) return 'turtle_bay';
-    if (z < Z(56) && x < XA('lex')) return 'billionaires_row';
-    if (z > Z(42) && x < XA('6')) return 'garment';
-    if (z > Z(38) && x > XA('madison')) return 'murray_hill';
-    return 'midtown';
-  }
-  if (z < Z(14)) {
-    if (x < XA('10') - 20) return z < Z(28) ? 'hudson_yards' : 'west_chelsea';
-    if (x < XA('6')) return 'chelsea';
-    if (x < XA('park') + 20) return z < Z(26) ? 'nomad' : 'flatiron';
-    if (x > XA('1') + 20) return 'stuy_town';
-    return z < Z(23) ? 'murray_hill' : 'gramercy';
-  }
-  if (z < HOUSTON_Z) {
-    if (x > XA('3') - 10) return 'east_village';
-    if (x < XA('7') - 300) return 'west_village';
-    if (x < XA('5') - 120) return 'west_village';
-    return 'village';
-  }
-  if (z < CANAL_Z) {
-    if (x > 760) return 'lower_east_side';
-    if (x > 380) return 'little_italy';
-    if (x < -420) return 'hudson_square';
-    return 'soho';
-  }
-  if (x < -380 && z > CHAMBERS_Z - 200) return 'battery_park_city';
-  if (z < CHAMBERS_Z) {
-    if (x > 900) return 'lower_east_side';
-    if (x > 300) return 'chinatown';
-    return 'tribeca';
-  }
-  if (z < 5250 && x > 250 && x < 900) return 'civic_center';
-  return 'fidi';
+  // Coast rings only. Do not call streetZ or avenueX: those still fall back to
+  // numbered Manhattan streets when GEO.streets is empty, and would label Central as Midtown.
+  if (pointInPoly(HONG_KONG_ISLAND_COASTLINE, x, z)) return Math.hypot(x, z) < 1200 ? 'hk_cbd' : 'hk_island';
+  if (KOWLOON_COASTLINE.length && pointInPoly(KOWLOON_COASTLINE, x, z)) return 'hk_kowloon';
+  return 'hk_harbour';
 }
 for (const b of BLOCKS) b.district = districtAt(b.cx, b.cz);
 
@@ -694,22 +646,34 @@ if (GEO.frame.city !== 'hk' && EAST_RIVER_BRIDGES[3]) {
   );
 }
 
-const ISLAND_BOUNDS = (() => {
+function boundsOfRing(pts) {
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const p of MANHATTAN_COASTLINE) {
-    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z;
+    if (p.z > maxZ) maxZ = p.z;
+  }
+  return { minX, maxX, minZ, maxZ };
+}
+const HARBOUR_COASTLINES = ((GEO.harbour && GEO.harbour.rings) || []).map(toPts);
+// Island + Kowloon + Victoria Harbour. The island ring alone is not the playable coast.
+const ISLAND_BOUNDS = (() => {
+  const boxes = [
+    boundsOfRing(HONG_KONG_ISLAND_COASTLINE),
+    boundsOfRing(KOWLOON_COASTLINE),
+    ...HARBOUR_COASTLINES.map(boundsOfRing)
+  ].filter((b) => Number.isFinite(b.minX));
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const b of boxes) {
+    minX = Math.min(minX, b.minX);
+    maxX = Math.max(maxX, b.maxX);
+    minZ = Math.min(minZ, b.minZ);
+    maxZ = Math.max(maxZ, b.maxZ);
   }
   return { minX, maxX, minZ, maxZ, sidewalkHeight: 0.22, waterLevel: -2.2 };
 })();
-// Player clamp and the atlas "whole map" fit. Kowloon sits north of Hong Kong Island, so the island
-// box alone pulls Tsim Sha Tsui back onto the island shore. The water-shader boxes stay on ISLAND_BOUNDS.
-const PLAY_BOUNDS = (() => {
-  let { minX, maxX, minZ, maxZ } = ISLAND_BOUNDS;
-  for (const p of KOWLOON_COASTLINE) {
-    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
-  }
-  return { minX, maxX, minZ, maxZ, sidewalkHeight: ISLAND_BOUNDS.sidewalkHeight, waterLevel: ISLAND_BOUNDS.waterLevel };
-})();
+const PLAY_BOUNDS = ISLAND_BOUNDS;
 
 // Legacy midtown landmark block registry (`${col}_${row}` on AVENUES x STREETS): landmarks now stand on their real
 // lots (LANDMARK_SITES), so nothing is reserved on the old superblock grid
@@ -853,6 +817,8 @@ export {
   ALL_AVENUES,
   CENTRAL_PARK_BOUNDS,
   getIslandBoundsAtZ,
+  HONG_KONG_ISLAND_COASTLINE,
+  KOWLOON_COASTLINE,
   MANHATTAN_COASTLINE,
   getBroadwayX,
   BROADWAY_LINE,

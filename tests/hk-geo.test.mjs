@@ -244,8 +244,10 @@ test('GEO_CITY=hk writes harbour geodata and leaves nyc-geodata alone', async ()
   assert.equal(built.GEO.frame.city, 'hk');
   assert.ok(built.GEO.harbour.rings.length >= 1);
   assert.equal(built.GEO.harbour.oppositeShore, 'kowloon');
-  assert.ok(built.GEO.manhattan.length > 10);
-  assert.ok(built.GEO.boroughs.newJersey[0].length > 10);
+  assert.equal(built.GEO.manhattan, undefined);
+  assert.equal(built.GEO.boroughs.newJersey, undefined);
+  assert.ok(built.GEO.hongKongIsland.length > 10);
+  assert.ok(built.GEO.kowloon.length > 10);
   assert.ok(Math.abs(built.GEO.points.central[0]) < 1);
   assert.ok(Math.abs(built.GEO.points.central[1]) < 1);
   assert.ok(built.GEO.points.tst[0] > 900);
@@ -267,6 +269,10 @@ test('committed hk-geodata.js stays the full Island + Kowloon extract', async ()
   const size = fs.statSync(committedPath).size;
   assert.ok(size > 5e6, `committed hk-geodata.js is ${size} bytes; the sample rebuild is far smaller`);
   const { GEO } = await import(pathToFileURL(committedPath).href);
+  assert.equal(GEO.manhattan, undefined);
+  assert.equal(GEO.boroughs.newJersey, undefined);
+  assert.ok(GEO.hongKongIsland.length > 100);
+  assert.ok(GEO.kowloon.length > 100);
   assert.ok(GEO.blocks.length > 10000, `blocks ${GEO.blocks.length}; the Statue Square sample has 7`);
   assert.ok(GEO.roads.length > 1000, `roads ${GEO.roads.length}; the Statue Square sample has 5`);
   assert.ok(GEO.roadGraph.links.length > 1000, `links ${GEO.roadGraph.links.length}; the Statue Square sample has 5`);

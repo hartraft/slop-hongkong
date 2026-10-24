@@ -158,9 +158,9 @@ OSM keeps the water and coast role. LandsD stays Building and Road Centreline. i
 
 `tools/data/q_hk_coast.overpassql` fetches coastline and water ways, plus relations (`natural=water`, `natural=coastline`, `harbour=yes`, `waterway=riverbank`) so the Victoria Harbour multipolygon is included. Piers stay on `q_hk_piers.overpassql`. A full fetch writes gitignored `tools/data/hk/osm_coast.json` and `osm_piers.json`. Without those files the build uses the committed samples `tools/data/hk/samples/harbour-coast.json` and `harbour-piers.json`. `GEO_HK_COAST` and `GEO_HK_PIERS` override both. Those samples are already a full-bbox coast and pier fixture: the full OSM coast reproduces the same Island, Kowloon, harbour, and pier rings. Parks stay empty unless `osm_parks.json` is present. The committed module is the full extract in the next section, not the seven-block sample. A fresh clone does not contain the gitignored extracts, so rebuilding without fetching shrinks the module back to the sample.
 
-`tools/geo-hk-extra.mjs` rasterises the v1 bbox (about 16 m). Coastline is a barrier. The bbox border is sealed. Flooding starts at the harbour seed (114.1735, 22.2915). Land is the unflooded empty cells, not the barrier cells, so the border does not stitch Hong Kong Island to Kowloon. The component that contains Central is `GEO.manhattan`. The component that contains Tsim Sha Tsui is `GEO.boroughs.newJersey[0]` (Kowloon, the opposite shore). Harbour water is the flooded component of the seed that lies within 1700 m of both shores. Named OSM water rings are appended when they do not contain Central or Tsim Sha Tsui. Piers are oriented boxes, 80–250000 m², within 90 m of either shore.
+`tools/geo-hk-extra.mjs` rasterises the v1 bbox (about 16 m). Coastline is a barrier. The bbox border is sealed. Flooding starts at the harbour seed (114.1735, 22.2915). Land is the unflooded empty cells, not the barrier cells, so the border does not stitch Hong Kong Island to Kowloon. The component that contains Central is `GEO.hongKongIsland`. The component that contains Tsim Sha Tsui is `GEO.kowloon`. Those rings are not stored as `manhattan` or `boroughs.newJersey`. Harbour water is the flooded component of the seed that lies within 1700 m of both shores. Named OSM water rings are appended when they do not contain Central or Tsim Sha Tsui. Piers are oriented boxes, 80–250000 m², within 90 m of either shore.
 
-The module matches the NYC `GEO` keys. Empty `streets`, `avenues`, `broadway`, `bridges`, and `landmarks`. `centralPark.bounds` is null. `frame.city` is `'hk'` (the NYC file leaves `city` unset). Block tuples keep the NYC shape and then append `[height, base, name]`.
+Empty `streets`, `avenues`, `broadway`, `bridges`, and `landmarks`. `centralPark.bounds` is null. `frame.city` is `'hk'` (the NYC file leaves `city` unset). Hong Kong Island is `hongKongIsland`. Kowloon is `kowloon`. Block tuples keep the NYC shape and then append `[height, base, name]`.
 
 ```bash
 # Writes js/hk-geodata.js. Without the gitignored extracts this is the seven-block sample.
@@ -184,9 +184,9 @@ The full extract and the sample coast report the same shores: Victoria Harbour 1
 
 ### Shore helper
 
-`getIslandBoundsAtZ(z)` is still Hong Kong Island’s outermost west/east crossing, clamped at the island’s ends. `getIslandBoundsAtZ(z, x)` returns Kowloon’s crossing when `x` lies in that span and not the island’s, or when `z` is north of the island and still on Kowloon. Tsim Sha Tsui (about z = −1447) is north of the island’s northernmost point (z = −1392), so the one-argument helper would clamp it onto the island.
+`getIslandBoundsAtZ(z)` is Hong Kong Island’s outermost west/east crossing, clamped at the island’s ends. `getIslandBoundsAtZ(z, x)` returns Kowloon’s crossing when `x` lies in that span and not the island’s, or when `z` is north of the island and still on Kowloon. Tsim Sha Tsui (about z = −1447) is north of the island’s northernmost point (z = −1392), so the one-argument helper would clamp it onto the island.
 
-`PLAY_BOUNDS` is the union of the two shores. The player clamp and the atlas “whole map” fit use it. `ISLAND_BOUNDS` stays the island, so the reflected-light boxes in `js/tsl-materials.js` and the road-network z sweep still follow Hong Kong Island. Covering Kowloon in those two is a follow-up.
+`ISLAND_BOUNDS` and `PLAY_BOUNDS` are the same box: Hong Kong Island, Kowloon, and the Victoria Harbour rings. The island ring alone is not the water or player box. The water material does not reflect a Midtown / New Jersey / Brooklyn skyline.
 
 ## Full extract (committed module)
 
@@ -208,7 +208,7 @@ The module, compared with the Statue Square sample (7 blocks, 5 road polylines, 
 - Roads: **11,692** polylines. Graph **16,084** nodes / **16,383** links / **2,298** names. **148,839** centreline pieces, **1,923** non-at-grade omitted, **392** non-carriageway skipped. OSM: **32,214** drivable ways after the graph filter, **13,308** centreline parts tagged, **3,652** gap links.
 - Shores: identical to the sample module. Harbour **13.33 km²**, Island **71.51 km²**, Kowloon **78.30 km²**, **49** piers, **4** harbour rings. Parks: **680** (the sample had none).
 - `landmarks` is `{}`. The landmark query is a name whitelist and returned one way; it is not copied onto the module. `buildLandmarks` still returns no meshes.
-- Central is inside Hong Kong Island. Admiralty is inside the island. Tsim Sha Tsui is inside Kowloon and not the island, north of the island's northernmost point (z = −1392). The harbour seed (114.1735, 22.2915) is inside the harbour ring and outside both shores, so the water stays between them. `PLAY_BOUNDS` is still the union of the two shores.
+- Central is inside Hong Kong Island. Admiralty is inside the island. Tsim Sha Tsui is inside Kowloon and not the island, north of the island's northernmost point (z = −1392). The harbour seed (114.1735, 22.2915) is inside the harbour ring and outside both shores, so the water stays between them. `ISLAND_BOUNDS` and `PLAY_BOUNDS` include both shores and the harbour rings.
 
 ```bash
 # Refresh the gitignored extracts, then rewrite the committed module.

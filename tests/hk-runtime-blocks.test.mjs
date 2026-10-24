@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BLOCKS, ROADS, districtAt, TELEPORT_LOCATIONS } from '../js/city-config.js';
+import { BLOCKS, ROADS, districtAt, TELEPORT_LOCATIONS, ISLAND_BOUNDS, PLAY_BOUNDS, NJ_SHORELINE_POLYGON, HONG_KONG_ISLAND_COASTLINE, KOWLOON_COASTLINE, getIslandBoundsAtZ } from '../js/city-config.js';
+import { GEO } from '../js/hk-geodata.js';
 
 test('every committed HK footprint keeps its LandsD height and a lot rect', () => {
   assert.ok(BLOCKS.length > 10000, `blocks ${BLOCKS.length}`);
@@ -37,6 +38,28 @@ test('districts and spawn stay on the Hong Kong coast, not numbered Manhattan st
   assert.equal(districtAt(6488, 8930), 'hk_island');
   assert.notEqual(districtAt(0, 0), 'midtown');
   assert.notEqual(districtAt(0, -5000), 'harlem');
+});
+
+test('shore bounds cover Island, Kowloon, and Victoria Harbour', () => {
+  assert.equal(GEO.manhattan, undefined);
+  assert.equal(GEO.boroughs.newJersey, undefined);
+  assert.ok(HONG_KONG_ISLAND_COASTLINE.length > 100);
+  assert.ok(KOWLOON_COASTLINE.length > 100);
+  assert.equal(NJ_SHORELINE_POLYGON.length, 0);
+  assert.equal(PLAY_BOUNDS, ISLAND_BOUNDS);
+  const inside = (x, z) => x >= ISLAND_BOUNDS.minX && x <= ISLAND_BOUNDS.maxX && z >= ISLAND_BOUNDS.minZ && z <= ISLAND_BOUNDS.maxZ;
+  assert.equal(inside(0, 0), true);
+  assert.equal(inside(GEO.points.tst[0], GEO.points.tst[1]), true);
+  assert.equal(inside(GEO.points.admiralty[0], GEO.points.admiralty[1]), true);
+  const harbour = GEO.harbour.rings[0];
+  assert.equal(inside(harbour[0], harbour[1]), true);
+  const west = GEO.harbour.rings[1];
+  assert.equal(inside(west[0], west[1]), true);
+  assert.ok(ISLAND_BOUNDS.minX < -5000);
+  assert.ok(ISLAND_BOUNDS.minZ < -8000);
+  assert.ok(ISLAND_BOUNDS.maxX > 9000);
+  const shore = getIslandBoundsAtZ(GEO.points.tst[1], GEO.points.tst[0]);
+  assert.ok(shore.westX < GEO.points.tst[0] && shore.eastX > GEO.points.tst[0]);
 });
 
 test('visible roads are the committed centreline, including Des Voeux and Chater', () => {

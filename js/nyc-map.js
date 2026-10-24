@@ -8,6 +8,7 @@ import {
   PLAY_BOUNDS,
   getIslandBoundsAtZ,
   MANHATTAN_COASTLINE,
+  KOWLOON_COASTLINE,
   WATERFRONT_PIERS,
   NJ_SHORELINE_POLYGON,
   BROOKLYN_POLYGONS,
@@ -221,7 +222,7 @@ function mapLayers() {
   // Land around the harbour: New Jersey, Brooklyn, Queens, the Bronx, Staten Island and Upper Manhattan (outlined), the
   // horizon fillers beyond the city line (not outlined); the East River & harbour islands
   L.land = new Path2D();
-  for (const ring of rings([NJ_SHORELINE_POLYGON, ...(BROOKLYN_POLYGONS || []), ...(QUEENS_POLYGONS || []), ...(BRONX_POLYGONS || []),
+  for (const ring of rings([KOWLOON_COASTLINE, NJ_SHORELINE_POLYGON, ...(BROOKLYN_POLYGONS || []), ...(QUEENS_POLYGONS || []), ...(BRONX_POLYGONS || []),
     STATEN_ISLAND_POLYGON, UPPER_MANHATTAN_POLYGON])) addRing(L.land, ring);
   L.fillers = new Path2D();
   for (const ring of rings([WESTCHESTER_POLYGON, NASSAU_POLYGON])) addRing(L.fillers, ring);

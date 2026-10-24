@@ -2522,6 +2522,10 @@ function createWaterMaterial() {
     return mix(body, lake, pond).mul(crestTint);
   })();
 
+  // Physical water only. The analytic Midtown / New Jersey / Brooklyn skyline is not reflected.
+  mat.emissiveNode = color(0x000000);
+  const REFLECT_NYC_SKYLINE = false;
+  if (REFLECT_NYC_SKYLINE) {
   // Night: the lit city seen along the reflected ray. Manhattan is a stack of boxes roughly inscribed in its shoreline;
   // across the rivers stand the NJ & Queens / Brooklyn waterfronts, and around the park lakes Central Park's rim.
   // Each is a row of lots with varied heights, lit windows, storefronts & riverside lamps, box-filtered by the unresolved
@@ -2665,6 +2669,7 @@ function createWaterMaterial() {
     const region = smoothstep(IB.minZ - 400.0, IB.minZ - 100.0, P.y).mul(float(1.0).sub(smoothstep(IB.maxZ + 200.0, IB.maxZ + 600.0, P.y)));
     return city.mul(brightness).mul(treeline).mul(fresnel).mul(night).mul(region);
   })();
+  }
 
   return mat;
 }

@@ -45,7 +45,7 @@ if (cityId === 'hk') {
   const GEO = {
     version: 1,
     frame: frameOut,
-    manhattan: flat(harbour.island),
+    hongKongIsland: flat(harbour.island),
     upperManhattan: [],
     innerShore: flat(harbour.island),
     islands: {},
@@ -53,9 +53,9 @@ if (cityId === 'hk') {
       brooklyn: [],
       queens: [],
       bronx: [],
-      statenIsland: [],
-      newJersey: [flat(harbour.kowloon)]
+      statenIsland: []
     },
+    kowloon: flat(harbour.kowloon),
     streets: [],
     avenues: [],
     broadway: [],
@@ -97,7 +97,7 @@ if (cityId === 'hk') {
 // Real Hong Kong geography in the simulation world frame: 1 unit = 1 m, x = east, z = south,
 // origin at ${hk.originLabel} (LAT0=${hk.LAT0}, LON0=${hk.LON0}), true north.
 // Polygons and polylines are flat [x0, z0, x1, z1, ...] arrays.
-// Hong Kong Island is \`manhattan\`. Kowloon, the opposite shore, is \`boroughs.newJersey\`.
+// Hong Kong Island is \`hongKongIsland\`. Kowloon is \`kowloon\`.
 // \`harbour\` is Victoria Harbour between them (OSM coast and water). Block tuples match the
 // NYC shape and then append [height, base, name] from LandsD TopHeight-BaseHeight.
 // Sources: Lands Department via CSDI Portal / DATA.GOV.HK (Building, Road Centreline);

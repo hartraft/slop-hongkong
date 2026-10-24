@@ -24,6 +24,34 @@ test('city module preloads start after the import map and before stylesheets', (
   assert.equal(imports.three, imports['three/webgpu'], 'Three.js aliases share one module instance');
 });
 
+test('Hong Kong boot builders do not call NYC borough, bridge, or landmark meshes', () => {
+  const root = join(__dirname, '..');
+  const read = (rel) => readFileSync(join(root, rel), 'utf8');
+  const between = (source, start, end) => source.slice(source.indexOf(start), source.indexOf(end));
+  const boroughs = between(read('js/boroughs.js'), 'function buildBoroughs', 'function buildNycBoroughs');
+  assert.match(boroughs, /buildHkHarbourLand/);
+  assert.doesNotMatch(boroughs, /buildStatueOfLiberty|buildBrooklynBridge|buildSuspensionBridge|Palisades/);
+  const landmarks = between(read('js/landmarks.js'), 'function buildLandmarks', 'function buildNycLandmarks');
+  assert.match(landmarks, /return \{ colliders: \[\] \}/);
+  assert.doesNotMatch(landmarks, /ManhattanLandmarks|Chrysler|Times Square/);
+  const blocks = between(read('js/buildings.js'), 'function buildCityBlocks', 'function buildNycCityBlocks');
+  assert.match(blocks, /buildHkFootprintBlocks/);
+  assert.doesNotMatch(blocks, /brownstone|waterTower|fireEscape/);
+  const details = between(read('js/street-details.js'), 'function buildStreetDetails', 'function buildNycStreetDetails');
+  assert.match(details, /return \{ group, footprints: \[\], signalClock/);
+  assert.doesNotMatch(details, /Times Square|fromOldFrame/);
+  const grid = between(read('js/city-grid.js'), 'function buildCityGrid', 'function buildManhattanWaterfrontEdge');
+  assert.match(grid, /buildHkRoadRibbons\(group\)/);
+  assert.doesNotMatch(grid, /buildWaterfrontPiers\(group\);|buildManhattanWaterfrontEdge\(/);
+  assert.match(read('js/city-grid.js'), /const NYC_GRID_DECOR = false/);
+  assert.match(read('js/tsl-materials.js'), /const REFLECT_NYC_SKYLINE = false/);
+  const config = read('js/city-config.js');
+  assert.doesNotMatch(config, /GEO\.manhattan|newJersey/);
+  const geodataHead = read('js/hk-geodata.js').slice(0, 800);
+  assert.match(geodataHead, /hongKongIsland/);
+  assert.doesNotMatch(geodataHead, /GEO\.manhattan|newJersey/);
+});
+
 test('native module entry and imports share canonical preloaded URLs on GitHub Pages', () => {
   const links = preloads.map((match) => match[1]);
   assert.equal(links.length, 31);
