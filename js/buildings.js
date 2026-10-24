@@ -29,6 +29,10 @@ import {
   CENTRAL_PARK_BOUNDS,
   ISLAND_BOUNDS,
   BLOCKS,
+  HK_CORE_BBOX,
+  HK_NULL_HEIGHT,
+  blockInHkCore,
+  hkFootprintHeight,
   LANDMARK_SITES,
   streetZ,
   avenueX,
@@ -257,72 +261,132 @@ function carve(r, holes, axis = 'x') {
   return out.map(([u0, u1, v0, v1]) => (flip ? rect(v0, v1, u0, u1) : rect(u0, u1, v0, v1)));
 }
 
-// One box per LandsD footprint, scaled to the polygon's bounding box and the tuple height.
-// Polygon extrusion of the full Island + Kowloon set does not finish. The Manhattan lot
-// filler only walks rects/frames and then invents storeys, water towers and fire escapes.
+// LandsD footprint ring extruded to TopHeight − BaseHeight. Same shape path as
+// createExtrudedPolygonMesh in city-grid.js: outline in (x, −z), depth along Y.
+// Only the Central core is built. A null height is skipped (HK_NULL_HEIGHT).
+const HK_EXTRUDE_BATCH = 400;
+
+function ringForExtrude(poly) {
+  const pts = [];
+  for (const p of poly || []) {
+    const prev = pts[pts.length - 1];
+    if (prev && Math.hypot(prev.x - p.x, prev.z - p.z) < 0.05) continue;
+    pts.push({ x: p.x, z: p.z });
+  }
+  if (pts.length >= 2) {
+    const a = pts[0];
+    const b = pts[pts.length - 1];
+    if (Math.hypot(a.x - b.x, a.z - b.z) < 0.05) pts.pop();
+  }
+  if (pts.length < 3) return null;
+  let area = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    area += pts[j].x * (-pts[i].z) - pts[i].x * (-pts[j].z);
+  }
+  if (area < 0) pts.reverse();
+  return pts;
+}
+
+function extrudeHkFootprint(pts, height) {
+  const shape = new THREE.Shape();
+  shape.moveTo(pts[0].x, -pts[0].z);
+  for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i].x, -pts[i].z);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false, curveSegments: 1 });
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, ISLAND_BOUNDS.sidewalkHeight, 0);
+  return geo;
+}
+
 function buildHkFootprintBlocks(scene) {
   const group = new THREE.Group();
   group.name = 'HongKongCityBlocks';
   const colliders = [];
   const allBlocks = [];
-  const lots = [];
-  for (const b of BLOCKS) {
-    if (b.park > 0.6 || b.median) continue;
-    const w = b.maxX - b.minX;
-    const d = b.maxZ - b.minZ;
-    if (!(w >= 0.8) || !(d >= 0.8)) continue;
-    const h = typeof b.height === 'number' && b.height > 0 ? b.height : 12;
-    lots.push({ b, w, d, h });
-  }
   const mat = new THREE.MeshStandardNodeMaterial({
     color: 0xd5d0c4,
     roughness: 0.7,
     metalness: 0.06
   });
   mat.name = 'hkFootprint';
-  if (lots.length) {
-    const geo = new THREE.BoxGeometry(1, 1, 1);
-    geo.translate(0, 0.5, 0);
-    const mesh = new THREE.InstancedMesh(geo, mat, lots.length);
+  const batch = [];
+  let extruded = 0;
+  let skippedOutside = 0;
+  let skippedNull = 0;
+  let skippedDegenerate = 0;
+  const flush = () => {
+    if (!batch.length) return;
+    const merged = mergeGeometries(batch, false);
+    for (const geo of batch) geo.dispose();
+    batch.length = 0;
+    if (!merged) return;
+    const mesh = new THREE.Mesh(merged, mat);
     mesh.name = 'HkFootprints';
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    const dummy = new THREE.Object3D();
-    for (let i = 0; i < lots.length; i++) {
-      const { b, w, d, h } = lots[i];
-      dummy.position.set(b.cx, 0.22, b.cz);
-      dummy.rotation.set(0, 0, 0);
-      dummy.scale.set(w, h, d);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      colliders.push({ minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ, maxY: 0.22 + h });
-      allBlocks.push({
-        id: b.name || `hk_${b.id}`,
-        cx: b.cx,
-        cz: b.cz,
-        minX: b.minX,
-        maxX: b.maxX,
-        minZ: b.minZ,
-        maxZ: b.maxZ,
-        district: b.district || 'hk_cbd',
-        maxH: h,
-        footprints: [{ x0: b.minX, x1: b.maxX, z0: b.minZ, z1: b.maxZ, h }],
-        cornices: [],
-        waterTowers: [],
-        hvacUnits: [],
-        fireEscapes: [],
-        awnings: [],
-        scaffoldSheds: [],
-        yards: []
-      });
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
     group.add(mesh);
+  };
+  for (const b of BLOCKS) {
+    if (b.park > 0.6 || b.median) continue;
+    if (!blockInHkCore(b)) {
+      skippedOutside++;
+      continue;
+    }
+    const h = hkFootprintHeight(b);
+    if (!(h > 0)) {
+      skippedNull++;
+      continue;
+    }
+    const pts = ringForExtrude(b.poly);
+    if (!pts) {
+      skippedDegenerate++;
+      continue;
+    }
+    let geo = null;
+    try {
+      geo = extrudeHkFootprint(pts, h);
+    } catch {
+      geo = null;
+    }
+    if (!geo || !geo.getAttribute('position') || geo.getAttribute('position').count < 3) {
+      if (geo) geo.dispose();
+      skippedDegenerate++;
+      continue;
+    }
+    batch.push(geo);
+    if (batch.length >= HK_EXTRUDE_BATCH) flush();
+    extruded++;
+    const ground = ISLAND_BOUNDS.sidewalkHeight;
+    colliders.push({ minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ, maxY: ground + h });
+    allBlocks.push({
+      id: b.name || `hk_${b.id}`,
+      cx: b.cx,
+      cz: b.cz,
+      minX: b.minX,
+      maxX: b.maxX,
+      minZ: b.minZ,
+      maxZ: b.maxZ,
+      district: b.district || 'hk_cbd',
+      maxH: h,
+      footprints: [{ x0: b.minX, x1: b.maxX, z0: b.minZ, z1: b.maxZ, h, pts: b.poly }],
+      cornices: [],
+      waterTowers: [],
+      hvacUnits: [],
+      fireEscapes: [],
+      awnings: [],
+      scaffoldSheds: [],
+      yards: []
+    });
   }
+  flush();
   scene.add(group);
-  const named = lots.filter((lot) => /HSBC Main Building|Prince's Building|Bank of China Building|CONNAUGHT|DES VOEUX/i.test(lot.b.name));
-  console.info(`[buildings] HK footprint boxes ${lots.length}` + (named.length ? `; ${named.map((lot) => `${lot.b.name} ${lot.h}m`).join('; ')}` : ''));
+  const named = allBlocks.filter((block) => /HSBC Main Building|Prince's Building|Bank of China Building|Standard Chartered Bank Building/i.test(block.id));
+  console.info(
+    `[buildings] Central core ${HK_CORE_BBOX.south},${HK_CORE_BBOX.west},${HK_CORE_BBOX.north},${HK_CORE_BBOX.east} ` +
+    `extruded ${extruded} LandsD footprints; null height ${HK_NULL_HEIGHT} ${skippedNull}; ` +
+    `outside core skipped ${skippedOutside}; degenerate ${skippedDegenerate}` +
+    (named.length ? `; ${named.map((block) => `${block.id} ${block.maxH}m`).join('; ')}` : '')
+  );
   return {
     group,
     colliders,

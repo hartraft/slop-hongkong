@@ -504,6 +504,74 @@ function nearestRoads(x, z, radius = 60) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Central CBD, the only footprints the page extrudes. WGS84 degrees, south / west / north / east.
+// Same local ENU as tools/geo-frame.mjs (theta from GEO.frame.bearingDeg, origin at LAT0/LON0).
+// A null LandsD height is skipped: the lot stays on BLOCKS and no storey count is invented.
+// ---------------------------------------------------------------------------------------------------------------------
+const HK_CORE_BBOX = Object.freeze({
+  south: 22.276,
+  west: 114.150,
+  north: 22.288,
+  east: 114.170
+});
+const HK_NULL_HEIGHT = 'skip';
+
+function hkCoreProject(lon, lat) {
+  const lat0 = GEO.frame.lat0;
+  const lon0 = GEO.frame.lon0;
+  const phi0 = (lat0 * Math.PI) / 180;
+  const sin0 = Math.sin(phi0);
+  const A = 6378137.0;
+  const E2 = 6.69437999014e-3;
+  const nrad = A / Math.sqrt(1 - E2 * sin0 * sin0);
+  const mrad = (A * (1 - E2)) / Math.pow(1 - E2 * sin0 * sin0, 1.5);
+  const kx = (Math.PI / 180) * nrad * Math.cos(phi0);
+  const ky = (Math.PI / 180) * mrad;
+  const east = (lon - lon0) * kx;
+  const north = (lat - lat0) * ky;
+  const theta = ((GEO.frame.bearingDeg || 0) * Math.PI) / 180;
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  return [east * c - north * s, -(east * s + north * c)];
+}
+
+const HK_CORE_WORLD = (() => {
+  const corners = [
+    [HK_CORE_BBOX.west, HK_CORE_BBOX.south],
+    [HK_CORE_BBOX.east, HK_CORE_BBOX.south],
+    [HK_CORE_BBOX.west, HK_CORE_BBOX.north],
+    [HK_CORE_BBOX.east, HK_CORE_BBOX.north]
+  ].map(([lon, lat]) => hkCoreProject(lon, lat));
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const [x, z] of corners) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minZ = Math.min(minZ, z);
+    maxZ = Math.max(maxZ, z);
+  }
+  return Object.freeze({ minX, maxX, minZ, maxZ });
+})();
+
+function blockInHkCore(block, bounds = HK_CORE_WORLD) {
+  return block.cx >= bounds.minX && block.cx <= bounds.maxX && block.cz >= bounds.minZ && block.cz <= bounds.maxZ;
+}
+
+function hkFootprintHeight(block) {
+  if (typeof block.height === 'number' && block.height > 0) return block.height;
+  switch (HK_NULL_HEIGHT) {
+    case 'skip':
+      return null;
+    default: {
+      const unknown = HK_NULL_HEIGHT;
+      throw new Error(`Unhandled null-height policy ${unknown}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Blocks: every real curb island (raised sidewalk slab) with its lot rectangles inside the property line
 //   poly: curb outline [{x, z}], rects: [[x0, x1, z0, z1], ...] building lots (axis-aligned; one for a grid block),
 //   park: share covered by parkland (NYC Parks), parkName, rect: the island is an axis-aligned rectangle,
@@ -522,9 +590,10 @@ const BLOCKS = GEO.blocks.map((tuple, id) => {
   }
   a *= 0.5;
   const area = Math.abs(a);
-  // Hong Kong tuples append [height, base, name]. A footprint whose axis-aligned rects are
-  // empty still has a polygon; the lot is that polygon's bounding box so a builder can
-  // extrude it. Narrow HK footprints are buildings, not Park Avenue malls.
+  // Hong Kong tuples append [height, base, name]. An empty lot list is filled with the
+  // ring's bounding box so older rect walks still have an entry. That box overfills
+  // rotated and L-shaped Central footprints. The page extrudes `poly`, not this rect.
+  // Narrow HK footprints are buildings, not Park Avenue malls.
   let lotRects = rects && rects.length ? rects : [];
   if (GEO.frame.city === 'hk' && !lotRects.length && maxX > minX && maxZ > minZ) {
     lotRects = [[minX, maxX, minZ, maxZ]];
@@ -853,6 +922,11 @@ export {
   PLAY_BOUNDS,
   LANDMARK_BLOCKS,
   BLOCKS,
+  HK_CORE_BBOX,
+  HK_CORE_WORLD,
+  HK_NULL_HEIGHT,
+  blockInHkCore,
+  hkFootprintHeight,
   CUT_Z,
   SIGNAL_TIMING,
   streetZ,

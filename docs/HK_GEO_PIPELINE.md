@@ -178,7 +178,17 @@ The full extract and the sample coast report the same shores: Victoria Harbour 1
 
 ### Boot
 
-`js/geo-source.js` always exports the Hong Kong module. `resolveRuntimeCity` returns `'hk'`. A `?city=` query and `GEO_CITY` do not switch the page. Node tool runs still accept `hk`, `hongkong`, and `hong-kong` for `GEO_CITY` when rebuilding data. The map paints `GEO.harbour.rings` in the pond colour before the land fill, so the shores cover overlap. The existing water plane stays. `buildLandmarks` returns no meshes when `frame.city` is `'hk'`, so Midtown props are not dropped on the origin. Procedural blocks stay.
+`js/geo-source.js` always exports the Hong Kong module. `resolveRuntimeCity` returns `'hk'`. A `?city=` query and `GEO_CITY` do not switch the page. Node tool runs still accept `hk`, `hongkong`, and `hong-kong` for `GEO_CITY` when rebuilding data. The map paints `GEO.harbour.rings` in the pond colour before the land fill, so the shores cover overlap. The existing water plane stays. `buildLandmarks` returns no meshes when `frame.city` is `'hk'`, so Midtown props are not dropped on the origin. `buildCityBlocks` extrudes the Central core only (below). The Manhattan lot filler is not called.
+
+### Central core buildings
+
+The visible massing is the Central CBD, not the full Island + Kowloon extract. `HK_CORE_BBOX` in `js/city-config.js` is WGS84 south / west / north / east:
+
+```
+22.276, 114.150, 22.288, 114.170
+```
+
+A block is inside when its centroid lies in that box in the world frame (the same local ENU as `tools/geo-frame.mjs`). On the committed module that is 2,021 footprints. 1,943 have a positive `TopHeight - BaseHeight` and are extruded from `poly` with `ExtrudeGeometry` (the same outline path as `createExtrudedPolygonMesh`). 78 have a null height and are skipped (`HK_NULL_HEIGHT = 'skip'`): no stand-in slab and no invented storeys. The other 51,092 footprints are not built. The axis-aligned box stored on an empty `rects` list is not the mesh. Committed tuples do not carry courtyard holes, so a court extrudes as its outer ring.
 
 `index.html` preloads `js/hk-geodata.js`, then `js/geo-source.js`, then `js/city-config.js`, and the rest of the module graph (31 preloads). It does not preload `js/nyc-geodata.js`. `js/traffic.js` statically imports `js/pedestrian-routes.js`, so that file is preloaded too. The previous 29-count check stopped on the missing `geo-source.js` link and never reached it.
 
