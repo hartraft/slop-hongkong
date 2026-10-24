@@ -216,7 +216,7 @@ test('GEO_CITY=hk loads the frame without CSCL or DCP', () => {
   fs.rmSync(empty, { recursive: true, force: true });
 });
 
-test('GEO_CITY=hk builds streets and stops before blocks', () => {
+test('GEO_CITY=hk builds streets and blocks and does not write hk-geodata', () => {
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-build-'));
   const boot = path.join(root, 'js/nyc-geodata.js');
   const before = fs.statSync(boot).mtimeMs;
@@ -231,9 +231,11 @@ test('GEO_CITY=hk builds streets and stops before blocks', () => {
   assert.match(text, /114\.15979/);
   assert.match(text, /centreline pieces/);
   assert.match(text, /road graph/);
-  assert.match(text, /Cut 3/);
+  assert.match(text, /non-at-grade omitted/);
+  assert.match(text, /Blocks \(Cut 3\): 7 footprints, 7 extruded/);
   assert.match(text, /Cut 4/);
-  assert.doesNotMatch(text, /Unset GEO_CITY to rebuild/);
+  assert.doesNotMatch(text, /Stopping before blocks/);
+  assert.doesNotMatch(text, /Broadway/);
   assert.equal(fs.statSync(boot).mtimeMs, before);
   assert.equal(fs.existsSync(path.join(root, 'js/hk-geodata.js')), false);
   fs.rmSync(empty, { recursive: true, force: true });

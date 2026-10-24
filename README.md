@@ -2,7 +2,7 @@
 
 A Hong Kong city simulation built with [three.js](https://threejs.org/), WebGPURenderer, and TSL. Explore on foot, by car, by bicycle, or by helicopter.
 
-This build still renders the upstream Manhattan map from `js/nyc-geodata.js`. The Hong Kong frame is Central (Statue Square / Chater): LAT0 = 22.28088, LON0 = 114.15979, true north. v1 covers Hong Kong Island, Kowloon, and Victoria Harbour. The origin decision is in [docs/HK_ORIGIN.md](docs/HK_ORIGIN.md). Cut 1 of the pipeline (frame, LandsD fetch, Overpass fill) is in [docs/HK_GEO_PIPELINE.md](docs/HK_GEO_PIPELINE.md).
+This build still renders the upstream Manhattan map from `js/nyc-geodata.js`. The Hong Kong frame is Central (Statue Square / Chater): LAT0 = 22.28088, LON0 = 114.15979, true north. v1 covers Hong Kong Island, Kowloon, and Victoria Harbour. The origin decision is in [docs/HK_ORIGIN.md](docs/HK_ORIGIN.md). Cut 3 of the pipeline (frame, LandsD fetch, street graph, and building blocks) is in [docs/HK_GEO_PIPELINE.md](docs/HK_GEO_PIPELINE.md).
 
 This fork started from [mrdoob/slop-newyork](https://github.com/mrdoob/slop-newyork). The live New York demo remains at [mrdoob.github.io/slop-newyork](https://mrdoob.github.io/slop-newyork/).
 

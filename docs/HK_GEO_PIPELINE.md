@@ -1,6 +1,6 @@
 # Hong Kong geodata pipeline
 
-The WebGPU sim still boots the committed Manhattan scene in `js/nyc-geodata.js`. Cut 2 builds a Hong Kong street graph from the LandsD Road Centreline and OSM highways. It does not write `js/hk-geodata.js` (Cut 4) and does not rebuild blocks or building heights (Cut 3).
+The WebGPU sim still boots the committed Manhattan scene in `js/nyc-geodata.js`. Cut 3 builds Hong Kong blocks from LandsD Building footprints (`TopHeight - BaseHeight`) on top of the Cut 2 street graph. It does not write `js/hk-geodata.js` and does not build the harbour (Cut 4).
 
 ## Frame
 
@@ -15,7 +15,7 @@ The WebGPU sim still boots the committed Manhattan scene in `js/nyc-geodata.js`.
 
 `tools/geo-base.mjs` reads `GEO_CITY`. Unset or `nyc` runs the existing Manhattan shoreline build and still requires the NYC inputs below. `hk` (aliases `hongkong`, `hong-kong`) sets the Hong Kong frame and does not open CSCL or DCP.
 
-`node tools/build-geodata.mjs` with `GEO_CITY=hk` builds the street graph and then exits 0 before blocks. It does not rewrite `js/nyc-geodata.js` and does not write an `hk-geodata` module. `tools/geo-blocks.mjs` is still the Manhattan block builder.
+`node tools/build-geodata.mjs` with `GEO_CITY=hk` builds the street graph, then the blocks, and exits 0. It does not rewrite `js/nyc-geodata.js` and does not write an `hk-geodata` module. `tools/geo-blocks.mjs` dispatches: unset `GEO_CITY` (or `nyc`) still rasterises Manhattan curb islands; `hk` calls `tools/geo-hk-blocks.mjs`.
 
 ## v1 bbox
 
@@ -42,7 +42,7 @@ Prefer the open FeatureServer paths. Attribution on every extract: **Lands Depar
 https://portal.csdi.gov.hk/server/rest/services/common/<id>/FeatureServer/0/query?f=geojson&returnGeometry=true&outFields=*&outSR=4326
 ```
 
-Building heights are metres on Hong Kong Principal Datum. A later cut extrudes `TopHeight - BaseHeight`. Some Active footprints leave those fields null; extrusion skips them. The road layer is an annotation-grade centreline, the LandsD stand-in for CSCL geometry and names. The layer probed on 2026-10-24 advertises `maxRecordCount` 3000 and supports `resultOffset`. The fetcher uses that page size, never asks for more than 10,000 rows, tiles the bbox into cells of at most 0.04°, and splits a cell that would need a deep offset. Features that cross a tile edge are deduped by `featureKey` in `tools/fetch-landsd.mjs`: GeoJSON `feature.id` when CSDI sets it (that id is the OBJECTID), otherwise `properties.OBJECTID` (`objectid` / `ObjectId`). Features with neither key are kept.
+Building heights are metres on Hong Kong Principal Datum. Cut 3 extrudes `TopHeight - BaseHeight`. Some Active footprints leave those fields null; the footprint stays a lot and extrusion skips it. The road layer is an annotation-grade centreline, the LandsD stand-in for CSCL geometry and names. The layer probed on 2026-10-24 advertises `maxRecordCount` 3000 and supports `resultOffset`. The fetcher uses that page size, never asks for more than 10,000 rows, tiles the bbox into cells of at most 0.04°, and splits a cell that would need a deep offset. Features that cross a tile edge are deduped by `featureKey` in `tools/fetch-landsd.mjs`: GeoJSON `feature.id` when CSDI sets it (that id is the OBJECTID), otherwise `properties.OBJECTID` (`objectid` / `ObjectId`). Features with neither key are kept.
 
 ### How to fetch
 
@@ -73,11 +73,13 @@ Same roles as the NYC pipeline. Only the government centreline changes:
 | Street centreline geometry and names | CSCL | LandsD Road Centreline |
 | Class, lanes, width, oneway, and roads the centreline misses | (CSCL carries width and lanes) | OSM highways (`q_hk_highways.overpassql`) |
 | Coast, water, parks, landmarks, piers | OSM `q_*` | OSM `q_hk_*` (unchanged roles) |
-| Blocks and building heights | DCP / CSCL blocks | Still Cut 3. Not this graph. |
+| Blocks and building heights | Centreline curb islands | LandsD Building, `TopHeight - BaseHeight`. OSM buildings are gap fill only. |
 
-LandsD `STREETTYPE` values on the layer are Main Road, Secondary Road, Highway, Tunnel, Restricted Road, and Track. Track is not a carriageway and is left out. The other five become world-frame pieces (`x` east, `z` south, metres) and graph links. A link is `[node a, node b, name index, width m, lanes, direction, inner x/z…]`, the same tuple as `buildRoadGraph()` in `tools/geo-roadgraph.mjs`. Direction is `1` along the digitised line, `-1` against it, `0` both ways. LandsD has no travel direction, so oneway comes from a matched OSM way; otherwise the link is both ways.
+LandsD `STREETTYPE` values on the layer are Main Road, Secondary Road, Highway, Tunnel, Restricted Road, and Track. Track is not a carriageway and is left out. The other five become world-frame pieces (`x` east, `z` south, metres). At-grade pieces also become graph links. A link is `[node a, node b, name index, width m, lanes, direction, inner x/z…]`, the same tuple as `buildRoadGraph()` in `tools/geo-roadgraph.mjs`. Direction is `1` along the digitised line, `-1` against it, `0` both ways. LandsD has no travel direction, so oneway comes from a matched OSM way; otherwise the link is both ways.
 
 There is no measured width on the centreline. A matched OSM `width` wins, then OSM `lanes` × 3.3 m, then a class width (motorway 14, trunk 12, primary / Main Road 11, secondary 8.5, residential 6.5, service / Restricted Road 4.5). Highway and motorway/trunk links use roadway code `2`. Tunnels use level `tunnel` and code `3`. OSM `bridge` lifts the level to `elevated`. `*_link` is a ramp.
+
+The road graph keeps the same 7-tuple as `buildRoadGraph()` in `tools/geo-roadgraph.mjs`: `[node a, node b, name index, width m, lanes, direction, inner x/z…]`. It does not grow a `level` or `rw` field. Non-at-grade parts are omitted from the graph the way NYC omits a centreline whose `from_level_code` / `to_level_code` is not `13`. A LandsD or OSM part whose level is `tunnel`, `elevated`, or `ramp` stays on `pieces` (so a later cut can still see it) and is counted as `omittedNonAtGrade`. At-grade `Highway` / motorway parts stay in the graph: in this layer that class is a surface road, not the NYC `rw_type` 2 viaduct filter. Level `13` is the shared at-grade code (`isAtGradeLevel` in `tools/geo-hk-streets.mjs`).
 
 Matching is 12 m and about 25° of bearing. When a service road and a main road both lie on the same centreline, the higher OSM class is the one copied onto it. An OSM way that is not already on the centreline is appended as gap links (runs of at least 18 m). Its ends snap to an existing node within 12 m. LandsD ends snap within 1.5 m. Footways, paths, and service driveways are not part of the graph. The Manhattan module is not imported, so Broadway, numbered avenues, and the 14th Street cutoff are not applied.
 
@@ -87,7 +89,7 @@ Without `tools/data/hk/landsd-roads.geojson`, the stage uses the committed Statu
 # Statue Square sample: LandsD centreline + OSM highway fixture
 GEO_CITY=hk node tools/geo-streets.mjs
 
-# Same graph, then stop. Exit 0. Does not write js/nyc-geodata.js or js/hk-geodata.js.
+# Streets, then blocks. Exit 0. Does not write js/nyc-geodata.js or js/hk-geodata.js.
 GEO_CITY=hk node tools/build-geodata.mjs
 
 # Full extract (gitignored) once tools/data/hk/landsd-roads.geojson and osm_highways.json exist
@@ -121,9 +123,35 @@ Rebuild, without touching the Hong Kong fetch:
 node --max-old-space-size=8192 tools/build-geodata.mjs
 ```
 
-That rewrites `js/nyc-geodata.js`. Leave `GEO_CITY` unset. The Hong Kong street stage does not write that file.
+That rewrites `js/nyc-geodata.js`. Leave `GEO_CITY` unset. The Hong Kong street and block stages do not write that file.
+
+## Blocks (Cut 3)
+
+`GEO_CITY=hk` makes `tools/geo-blocks.mjs` call `tools/geo-hk-blocks.mjs`. The Manhattan raster (Broadway plazas, Central Park drives, FDR / Route 9A, the sidewalk erosion, `CUT_Z = -7090`) runs only for New York.
+
+Hong Kong blocks are building footprints, not street-bounded curb islands. Each Active LandsD polygon is one block and one lot:
+
+- `poly` is the outer ring in the world frame (x east, z south, metres). Holes are kept on `holes`.
+- `height` is `TopHeight - BaseHeight` in metres, rounded to 0.1. `base` is `BaseHeight` on Hong Kong Principal Datum. A null or non-positive pair sets `height` to null: the lot remains, and nothing is extruded.
+- A footprint already aligned with the axes and close to rectangular gets one axis-aligned `rects` entry. A rotated rectangle gets one frontage `frames` entry, the same `[θ, px, pz, rects]` shape as an irregular Manhattan block (`world = p + R_y(θ)·(local − p)`). A footprint the rectangle would badly overfill (an L, a court) keeps `poly` and no lot rect.
+- Area under 40 m² is a speck and is dropped, same floor as the Manhattan islands. `park` stays 0. There is no park-name or highway-name pass.
+
+OSM buildings are gap fill only. If `tools/data/hk/osm_buildings.json` or `GEO_HK_OSM_BUILDINGS` is present (Overpass JSON or GeoJSON), a building whose interior point misses every LandsD ring is appended. `height` or `building:levels` × 3.2 m supplies the extrusion when the tag exists; otherwise the gap lot is not extruded. The default fetch does not download this file. LandsD is the building layer. A full extract is `landsd-buildings.geojson` (gitignored); without it the stage uses `samples/statue-square-buildings.geojson`.
+
+`CUT_Z` is not Manhattan's −7090 (129th Street). That line would push the north of Kowloon out of the detailed set. Hong Kong `CUT_Z` is 200 m north of the v1 northern edge, so Hong Kong Island and Kowloon up to the Lion Rock / Kowloon Peak line stay detailed (`z > CUT_Z`). Footprints north of that line, still inside the east-west span, are `lowDetail`: outlines with no lots and no extrusion. The committed sample sits on the origin and produces no carpet. The shoreline ring, Victoria Harbour, piers, and parks are not part of this cut; blocks do not need a land mask because they come from footprints.
+
+```bash
+# Statue Square sample: streets, then seven extruded footprints. Exit 0.
+GEO_CITY=hk node tools/build-geodata.mjs
+
+# Block list alone (Prince's Building 80.4 m, HSBC Main Building 177.2 m).
+GEO_CITY=hk node tools/geo-blocks.mjs
+
+# Full extracts (gitignored) once landsd-buildings.geojson is present.
+# Optional: tools/data/hk/osm_buildings.json for gap fill.
+GEO_CITY=hk node tools/build-geodata.mjs
+```
 
 ## Later cuts
 
-- Cut 3: blocks, and building heights from LandsD Building (`TopHeight - BaseHeight`). OSM buildings are gap fill only. `geo-blocks.mjs` stays on the Manhattan raster until then. The street stage stops here on purpose.
-- Cut 4: generate an `hk-geodata` module. Until that lands, the sim keeps booting `js/nyc-geodata.js`.
+- Cut 4: Victoria Harbour and the rest of the extra stage (shore, piers, parks), then an `hk-geodata` module the sim can boot. Until that lands, the sim keeps booting `js/nyc-geodata.js`. Block objects already carry `poly`, `height`, `base`, `rects`, and `frames` for that module. The NYC serialised block tuple is not extended here.

@@ -191,7 +191,7 @@ if (process.argv[1] && process.argv[1].endsWith('geo-streets.mjs')) {
   if (cityId === 'hk') {
     const graph = hkRoadGraph;
     const report = hkStreetReport;
-    console.log(`HK streets  pieces=${pieces.length}  nodes=${graph.nodes.length / 2}  links=${graph.links.length}`);
+    console.log(`HK streets  pieces=${pieces.length}  nodes=${graph.nodes.length / 2}  links=${graph.links.length}  omittedNonAtGrade=${report.omittedNonAtGrade}`);
     console.log(`LandsD ${report.roadsFile}${report.usedSampleRoads ? ' (sample)' : ''}`);
     if (report.osmFile) console.log(`OSM ${report.osmFile}  ways=${report.osmWays} tagged=${report.taggedFromOsm} gaps=${report.osmGapLinks}`);
     else console.log('OSM highways absent; widths come from STREETTYPE heuristics');

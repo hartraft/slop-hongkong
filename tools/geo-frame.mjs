@@ -45,7 +45,7 @@ export const LANDSD = Object.freeze({
     where: "Status='Active'",
     file: 'landsd-buildings.geojson',
     sampleFile: 'statue-square-buildings.geojson',
-    note: 'Building polygons. BaseHeight and TopHeight are metres on Hong Kong Principal Datum. Later cuts extrude TopHeight - BaseHeight.'
+    note: 'Building polygons. BaseHeight and TopHeight are metres on Hong Kong Principal Datum. Cut 3 extrudes TopHeight - BaseHeight and skips a null pair.'
   }),
   roads: Object.freeze({
     key: 'roads',

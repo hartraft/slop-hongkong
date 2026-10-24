@@ -1,7 +1,9 @@
 // Hong Kong street graph. LandsD Road Centreline takes the CSCL role (geometry and names).
 // OSM highways keep the class, lanes, width, oneway, and fill centreline gaps.
 // Width is a heuristic where neither source has a measured carriageway.
-// Blocks stay in geo-blocks.mjs (Manhattan, Cut 3). This module does not write hk-geodata.
+// The road graph keeps the NYC 7-tuple and, like tools/geo-roadgraph.mjs, only at-grade
+// links (level "13"). Tunnels, bridges, and ramps stay on `pieces` and are left out of the graph.
+// Blocks are tools/geo-hk-blocks.mjs. This module does not write hk-geodata.
 import fs from 'node:fs';
 import path from 'node:path';
 import { featureKey } from './fetch-landsd.mjs';
@@ -110,6 +112,11 @@ export function roadLevel(streetType, tags = {}) {
   if (tags.bridge === 'yes' || tags.bridge === 'viaduct') return 'elevated';
   if (hw.endsWith('_link')) return 'ramp';
   return '13';
+}
+
+// CSCL at-grade code. NYC's road graph keeps a link only when both ends are "13".
+export function isAtGradeLevel(level) {
+  return level === '13';
 }
 
 export function roadClassCode(streetType, highway) {
@@ -491,7 +498,7 @@ export function buildHkStreetGraph({ roads, osm = null, toWorld, simplify = null
     const rw = roadClassCode(record.streetType, highway);
     const name = record.name || donor?.name || '';
     pushPieces(pieces, { name, rw, w: width, lanes, dir: dirCode(dir), level, highway: highway || '', source: 'landsd' }, record.pts);
-    segments.push({ name, w: width, lanes, dir, pts: record.pts, snap: LANDSD_MERGE_M });
+    segments.push({ name, w: width, lanes, dir, level, pts: record.pts, snap: LANDSD_MERGE_M });
   }
   const landsdIndex = buildSegmentIndex(records);
   let osmGapLinks = 0;
@@ -505,16 +512,26 @@ export function buildHkStreetGraph({ roads, osm = null, toWorld, simplify = null
     for (const pts of gapPolylines(line.pts, landsdIndex)) {
       osmGapLinks++;
       pushPieces(pieces, { name: line.name, rw, w: width, lanes, dir: dirCode(dir), level, highway: highway || '', source: 'osm' }, pts);
-      segments.push({ name: line.name, w: width, lanes, dir, pts, snap: OSM_SNAP_M });
+      segments.push({ name: line.name, w: width, lanes, dir, level, pts, snap: OSM_SNAP_M });
     }
   }
-  const roadGraph = assembleRoadGraph(segments, simplify);
+  let omittedNonAtGrade = 0;
+  const graphSegments = [];
+  for (const seg of segments) {
+    if (!isAtGradeLevel(seg.level)) {
+      omittedNonAtGrade++;
+      continue;
+    }
+    graphSegments.push(seg);
+  }
+  const roadGraph = assembleRoadGraph(graphSegments, simplify);
   const report = {
     landsdFeatures: records.length,
     skippedFeatures: skipped,
     osmWays: osmRoads.length,
     taggedFromOsm,
     osmGapLinks,
+    omittedNonAtGrade,
     nodes: roadGraph.nodes.length / 2,
     links: roadGraph.links.length,
     roadsFile: null,
@@ -523,7 +540,7 @@ export function buildHkStreetGraph({ roads, osm = null, toWorld, simplify = null
   };
   if (log) {
     log(`${pieces.length} centerline pieces`);
-    log(`road graph: ${report.nodes} nodes, ${report.links} links (LandsD ${records.length}, OSM gaps ${osmGapLinks}, ${skipped} non-carriageway skipped)`);
+    log(`road graph: ${report.nodes} nodes, ${report.links} links (LandsD ${records.length}, OSM gaps ${osmGapLinks}, ${skipped} non-carriageway skipped, ${omittedNonAtGrade} non-at-grade omitted)`);
   }
   return { pieces, roadGraph, report };
 }

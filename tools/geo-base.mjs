@@ -6,7 +6,7 @@
 //   Bearing starts at 29.017° and is refined from the avenues. This path reads NYC Open Data.
 // GEO_CITY=hk: Central / Statue Square–Chater, true north. Does not read CSCL or DCP.
 //   The street graph is tools/geo-hk-streets.mjs (LandsD Road Centreline + OSM highways).
-//   Blocks stay on the Manhattan builder until Cut 3. See docs/HK_GEO_PIPELINE.md.
+//   Blocks are tools/geo-hk-blocks.mjs (LandsD Building footprints). See docs/HK_GEO_PIPELINE.md.
 //
 // NYC inputs (tools/data/, required only when GEO_CITY is nyc):
 //   dcp_boroughs.json       NYC DCP Borough Boundaries (water areas excluded)  data.cityofnewyork.us gthc-hcne

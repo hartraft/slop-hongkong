@@ -1,7 +1,8 @@
 // tools/build-geodata.mjs — writes js/nyc-geodata.js (see geo-base.mjs for the frame and the data sources)
 // usage: GEO_DATA=tools/data node --max-old-space-size=8192 tools/build-geodata.mjs [out.js]
-// GEO_CITY=hk builds the Hong Kong street graph (LandsD centreline + OSM highways) and stops before blocks.
-// It does not write js/hk-geodata.js. Unset GEO_CITY to rebuild the NYC boot geodata.
+// GEO_CITY=hk builds the Hong Kong street graph and LandsD building blocks, then exits 0.
+// It does not write js/hk-geodata.js (Cut 4) and does not rewrite js/nyc-geodata.js.
+// Unset GEO_CITY to rebuild the NYC boot geodata.
 // The NYC modules load CSCL and DCP at import time, so they are imported only after the city check.
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,16 +12,25 @@ const cityId = resolveCity(process.env.GEO_CITY);
 if (cityId === 'hk') {
   const hk = cityFrame('hk');
   const { pieces, hkRoadGraph, hkStreetReport } = await import('./geo-streets.mjs');
+  const { blocks, CUT_Z, hkBlockReport, lowDetail } = await import('./geo-blocks.mjs');
   const report = hkStreetReport;
+  const blocksReport = hkBlockReport;
   console.error(`[geodata] GEO_CITY=${process.env.GEO_CITY} selects the Hong Kong frame (LAT0=${hk.LAT0}, LON0=${hk.LON0}, true north).`);
-  console.error(`[geodata] Streets: ${pieces.length} centreline pieces, road graph ${hkRoadGraph.nodes.length / 2} nodes / ${hkRoadGraph.links.length} links.`);
-  console.error(`[geodata] LandsD ${report.roadsFile}${report.usedSampleRoads ? ' (Statue Square sample)' : ''}.`);
+  console.error(`[geodata] Streets: ${pieces.length} centreline pieces, road graph ${hkRoadGraph.nodes.length / 2} nodes / ${hkRoadGraph.links.length} links, ${report.omittedNonAtGrade} non-at-grade omitted.`);
+  console.error(`[geodata] LandsD roads ${report.roadsFile}${report.usedSampleRoads ? ' (Statue Square sample)' : ''}.`);
   if (report.osmFile) {
     console.error(`[geodata] OSM highways ${report.osmFile}: ${report.osmWays} drivable ways, ${report.taggedFromOsm} centreline parts tagged, ${report.osmGapLinks} gap links.`);
   } else {
     console.error('[geodata] OSM highways file not found. LandsD geometry stays in the graph; class falls back to STREETTYPE. Fetch with: bash tools/fetch-hk.sh');
   }
-  console.error('[geodata] Stopping before blocks. geo-blocks.mjs is still the Manhattan block builder (Cut 3). No hk-geodata module is written (Cut 4).');
+  console.error(`[geodata] Blocks (Cut 3): ${blocks.length} footprints, ${blocksReport.extruded} extruded (TopHeight-BaseHeight), ${blocksReport.nullHeight} without height, ${blocksReport.droppedSpecks} specks dropped, ${blocksReport.osmGapBlocks} OSM gaps, carpet ${lowDetail.length}, cutZ ${CUT_Z}.`);
+  console.error(`[geodata] LandsD buildings ${blocksReport.buildingsFile}${blocksReport.usedSampleBuildings ? ' (Statue Square sample)' : ''}.`);
+  if (blocksReport.osmFile) {
+    console.error(`[geodata] OSM buildings ${blocksReport.osmFile}: ${blocksReport.osmCandidates} candidates, ${blocksReport.osmCovered} already on a LandsD footprint, ${blocksReport.osmGapBlocks} gap blocks.`);
+  } else {
+    console.error('[geodata] OSM buildings file not found. LandsD footprints are the blocks. Optional gap fill: tools/data/hk/osm_buildings.json');
+  }
+  console.error('[geodata] Harbour, piers, and the playable hk-geodata module stay in Cut 4. js/nyc-geodata.js is not rewritten.');
   process.exit(0);
 }
 if (cityId !== 'nyc') {

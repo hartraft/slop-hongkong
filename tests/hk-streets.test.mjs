@@ -9,6 +9,7 @@ import {
   buildHkStreetGraph,
   heuristicLanes,
   heuristicWidth,
+  isAtGradeLevel,
   isDrivableOsmWay,
   isDrivableStreetType,
   resolveHkRoadInputs,
@@ -46,6 +47,10 @@ test('direction, class, and what counts as a carriageway', () => {
   assert.equal(roadLevel('Main Road', { bridge: 'yes', highway: 'primary' }), 'elevated');
   assert.equal(roadLevel('Main Road', { highway: 'primary_link' }), 'ramp');
   assert.equal(roadLevel('Main Road', { highway: 'primary' }), '13');
+  assert.equal(isAtGradeLevel('13'), true);
+  assert.equal(isAtGradeLevel('tunnel'), false);
+  assert.equal(isAtGradeLevel('elevated'), false);
+  assert.equal(isAtGradeLevel('ramp'), false);
   assert.equal(roadClassCode('Highway', 'motorway'), '2');
   assert.equal(roadClassCode('Tunnel', 'primary'), '3');
   assert.equal(roadClassCode('Main Road', 'primary'), '1');
@@ -142,6 +147,56 @@ test('a nearer service way does not outrank a primary way on the same centreline
   assert.equal(link[5], 1);
 });
 
+test('tunnels, bridges, and ramps stay on pieces and leave the road graph', () => {
+  const roads = {
+    features: [
+      {
+        type: 'Feature',
+        id: 1,
+        properties: { OBJECTID: 1, ENGLISHSTREETNAME: 'GRADE ROAD', STREETTYPE: 'Main Road' },
+        geometry: { type: 'LineString', coordinates: [[0, 0], [80, 0]] }
+      },
+      {
+        type: 'Feature',
+        id: 2,
+        properties: { OBJECTID: 2, ENGLISHSTREETNAME: 'WESTERN HARBOUR CROSSING', STREETTYPE: 'Tunnel' },
+        geometry: { type: 'LineString', coordinates: [[0, 30], [80, 30]] }
+      },
+      {
+        type: 'Feature',
+        id: 3,
+        properties: { OBJECTID: 3, ENGLISHSTREETNAME: 'FLYOVER', STREETTYPE: 'Main Road' },
+        geometry: { type: 'LineString', coordinates: [[0, 60], [80, 60]] }
+      },
+      {
+        type: 'Feature',
+        id: 4,
+        properties: { OBJECTID: 4, ENGLISHSTREETNAME: 'RAMP', STREETTYPE: 'Main Road' },
+        geometry: { type: 'LineString', coordinates: [[0, 90], [80, 90]] }
+      }
+    ]
+  };
+  const osm = {
+    elements: [
+      { type: 'way', id: 1, tags: { highway: 'primary', name: 'Grade Road' }, geometry: [{ lon: 0, lat: 2 }, { lon: 80, lat: 2 }] },
+      { type: 'way', id: 3, tags: { highway: 'primary', name: 'Flyover', bridge: 'yes' }, geometry: [{ lon: 0, lat: 62 }, { lon: 80, lat: 62 }] },
+      { type: 'way', id: 4, tags: { highway: 'primary_link', name: 'Ramp' }, geometry: [{ lon: 0, lat: 92 }, { lon: 80, lat: 92 }] }
+    ]
+  };
+  const { pieces, roadGraph, report } = buildHkStreetGraph({ roads, osm, toWorld });
+  assert.equal(report.omittedNonAtGrade, 3);
+  assert.equal(report.links, 1);
+  assert.equal(linkNamed(roadGraph, 'GRADE ROAD').length, 1);
+  assert.equal(linkNamed(roadGraph, 'GRADE ROAD')[0].length, 7);
+  assert.equal(linkNamed(roadGraph, 'WESTERN HARBOUR CROSSING').length, 0);
+  assert.equal(linkNamed(roadGraph, 'FLYOVER').length, 0);
+  assert.equal(linkNamed(roadGraph, 'RAMP').length, 0);
+  assert.ok(pieces.some((piece) => piece.name === 'WESTERN HARBOUR CROSSING' && piece.level === 'tunnel'));
+  assert.ok(pieces.some((piece) => piece.name === 'FLYOVER' && piece.level === 'elevated'));
+  assert.ok(pieces.some((piece) => piece.name === 'RAMP' && piece.level === 'ramp'));
+  assert.ok(pieces.some((piece) => piece.name === 'GRADE ROAD' && piece.level === '13'));
+});
+
 test('without OSM the centreline still builds and Main Road uses the class width', () => {
   const roads = {
     features: [
@@ -170,7 +225,9 @@ test('Statue Square sample joins LandsD names with the OSM fixture', () => {
   assert.equal(report.taggedFromOsm, 4);
   assert.equal(report.osmGapLinks, 1);
   assert.equal(report.links, 5);
+  assert.equal(report.omittedNonAtGrade, 0);
   const chater = linkNamed(roadGraph, 'CHATER ROAD')[0];
+  assert.equal(chater.length, 7);
   assert.equal(chater[3], 15);
   assert.equal(chater[4], 4);
   assert.equal(chater[5], 1);
