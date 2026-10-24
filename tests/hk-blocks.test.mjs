@@ -219,9 +219,14 @@ test('at-grade road pieces ignore tunnels', () => {
 });
 
 test('GEO_CITY=hk block CLI prints LandsD heights and the ridgeline cut', () => {
+  // Pin the Statue Square fixture. A local full extract would otherwise become the CLI input.
   const result = spawnSync(process.execPath, [path.join(root, 'tools/geo-blocks.mjs')], {
     encoding: 'utf8',
-    env: { ...process.env, GEO_CITY: 'hk' },
+    env: {
+      ...process.env,
+      GEO_CITY: 'hk',
+      GEO_HK_BUILDINGS: path.join(root, 'tools/data/hk/samples/statue-square-buildings.geojson')
+    },
     timeout: 20000
   });
   assert.equal(result.status, 0, result.stderr + result.stdout);

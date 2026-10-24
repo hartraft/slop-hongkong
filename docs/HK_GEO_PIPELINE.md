@@ -1,6 +1,8 @@
 # Hong Kong geodata pipeline
 
-Cut 5 boots Hong Kong only. Opening `index.html` loads `js/hk-geodata.js` with no `?city=` parameter: the Cut 2 street graph, LandsD Building blocks (`TopHeight - BaseHeight`), and Victoria Harbour from OSM coast and water. The module is a static import, preloaded ahead of `js/geo-source.js` and `js/city-config.js`. `js/nyc-geodata.js` is not on the boot path. The visible interface is Traditional Chinese (繁體中文). Manhattan landmark meshes are not built.
+Cut 5 boots Hong Kong only. The committed `js/hk-geodata.js` is the full Island + Kowloon extract (fetched 2026-10-24), not the Statue Square sample. Opening `index.html` loads that module with no `?city=` parameter: the LandsD centreline plus OSM highways, LandsD Building blocks (`TopHeight - BaseHeight`), Victoria Harbour from OSM coast and water, and OSM parks. The module is a static import, preloaded ahead of `js/geo-source.js` and `js/city-config.js`. `js/nyc-geodata.js` is not on the boot path. The visible interface is Traditional Chinese (繁體中文). Manhattan landmark meshes are not built (`buildLandmarks` returns nothing when `frame.city` is `'hk'`).
+
+A checkout without the gitignored extracts still builds. `GEO_CITY=hk node tools/build-geodata.mjs` then falls back to the Statue Square centreline and buildings plus the harbour samples, and it would overwrite `js/hk-geodata.js` with that small module. Regenerate the committed file only after `bash tools/fetch-hk.sh`.
 
 ## Frame
 
@@ -27,7 +29,7 @@ Hong Kong Island, Kowloon up to the Lion Rock / Kowloon Peak ridgeline, and Vict
 
 The box includes Green Island, Cape D'Aguilar, Stanley, and Stonecutters. Most of Lamma, Lantau, and the New Territories fall outside it. A sliver of northern Lamma or Tseung Kwan O can still meet the edge.
 
-Probe on 2026-10-24, `returnCountOnly` against this bbox: **70,247** Active buildings and **15,227** road centreline parts. A full building extract is on the order of 100 MB. Those files are gitignored.
+Probe on 2026-10-24, `returnCountOnly` against this bbox: **70,247** Active buildings and **15,227** road centreline parts. The tiled fetch the same day wrote **70,183** buildings and **15,222** centreline parts. The 64 buildings and 5 centreline parts in the count and not in the files have WGS84 geometry that lies entirely outside the box (a few metres past the east edge into Tseung Kwan O, or past the north or west edge). The envelope count includes them; the tile query does not. A full building extract is about 81 MB. Those files are gitignored.
 
 ## LandsD via CSDI
 
@@ -87,13 +89,11 @@ Without `tools/data/hk/landsd-roads.geojson`, the stage uses the committed Statu
 
 ```bash
 # Statue Square sample: LandsD centreline + OSM highway fixture
+# (only when tools/data/hk/landsd-roads.geojson is absent)
 GEO_CITY=hk node tools/geo-streets.mjs
 
-# Streets, then blocks. Exit 0. Does not write js/nyc-geodata.js or js/hk-geodata.js.
-GEO_CITY=hk node tools/build-geodata.mjs
-
-# Full extract (gitignored) once tools/data/hk/landsd-roads.geojson and osm_highways.json exist
-GEO_CITY=hk node tools/geo-streets.mjs
+# Streets, blocks, and harbour. Writes js/hk-geodata.js. Does not rewrite js/nyc-geodata.js.
+GEO_CITY=hk node --max-old-space-size=8192 tools/build-geodata.mjs
 ```
 
 ## OSM fill
@@ -156,14 +156,15 @@ GEO_CITY=hk node tools/build-geodata.mjs
 
 OSM keeps the water and coast role. LandsD stays Building and Road Centreline. iB1000 hydro is later; harbour v1 is OSM.
 
-`tools/data/q_hk_coast.overpassql` fetches coastline and water ways, plus relations (`natural=water`, `natural=coastline`, `harbour=yes`, `waterway=riverbank`) so the Victoria Harbour multipolygon is included. Piers stay on `q_hk_piers.overpassql`. A full fetch writes gitignored `tools/data/hk/osm_coast.json` and `osm_piers.json`. Without those files the build uses the committed samples `tools/data/hk/samples/harbour-coast.json` and `harbour-piers.json`. `GEO_HK_COAST` and `GEO_HK_PIERS` override both. The committed `js/hk-geodata.js` is the sample build, so a fresh clone reproduces it.
+`tools/data/q_hk_coast.overpassql` fetches coastline and water ways, plus relations (`natural=water`, `natural=coastline`, `harbour=yes`, `waterway=riverbank`) so the Victoria Harbour multipolygon is included. Piers stay on `q_hk_piers.overpassql`. A full fetch writes gitignored `tools/data/hk/osm_coast.json` and `osm_piers.json`. Without those files the build uses the committed samples `tools/data/hk/samples/harbour-coast.json` and `harbour-piers.json`. `GEO_HK_COAST` and `GEO_HK_PIERS` override both. Those samples are already a full-bbox coast and pier fixture: the full OSM coast reproduces the same Island, Kowloon, harbour, and pier rings. Parks stay empty unless `osm_parks.json` is present. The committed module is the full extract in the next section, not the seven-block sample. A fresh clone does not contain the gitignored extracts, so rebuilding without fetching shrinks the module back to the sample.
 
 `tools/geo-hk-extra.mjs` rasterises the v1 bbox (about 16 m). Coastline is a barrier. The bbox border is sealed. Flooding starts at the harbour seed (114.1735, 22.2915). Land is the unflooded empty cells, not the barrier cells, so the border does not stitch Hong Kong Island to Kowloon. The component that contains Central is `GEO.manhattan`. The component that contains Tsim Sha Tsui is `GEO.boroughs.newJersey[0]` (Kowloon, the opposite shore). Harbour water is the flooded component of the seed that lies within 1700 m of both shores. Named OSM water rings are appended when they do not contain Central or Tsim Sha Tsui. Piers are oriented boxes, 80–250000 m², within 90 m of either shore.
 
 The module matches the NYC `GEO` keys. Empty `streets`, `avenues`, `broadway`, `bridges`, and `landmarks`. `centralPark.bounds` is null. `frame.city` is `'hk'` (the NYC file leaves `city` unset). Block tuples keep the NYC shape and then append `[height, base, name]`.
 
 ```bash
-# Sample streets, seven Statue Square footprints, harbour, piers. Writes js/hk-geodata.js.
+# Writes js/hk-geodata.js. Without the gitignored extracts this is the seven-block sample.
+# With landsd-*.geojson and osm_*.json present it rewrites the full module. Do not commit the sample over it.
 GEO_CITY=hk node tools/build-geodata.mjs
 
 # Harbour stage alone (same coast resolution as the build).
@@ -172,7 +173,7 @@ node tools/geo-hk-extra.mjs
 node --test tests/hk-harbour.test.mjs tests/hk-geo.test.mjs tests/hk-blocks.test.mjs tests/hk-streets.test.mjs
 ```
 
-The sample build reports Victoria Harbour about 13.33 km² between Island about 71.51 km² and Kowloon about 78.30 km², with 49 piers. Central is the origin. Tsim Sha Tsui is about (988, −1447). Admiralty is about (499, 169), on the island.
+The full extract and the sample coast report the same shores: Victoria Harbour 13.33 km² between Island 71.51 km² and Kowloon 78.30 km², with 49 piers. Central is the origin. Tsim Sha Tsui is about (988, −1447). Admiralty is about (499, 169), on the island.
 
 ### Boot
 
@@ -186,7 +187,37 @@ The sample build reports Victoria Harbour about 13.33 km² between Island about 
 
 `PLAY_BOUNDS` is the union of the two shores. The player clamp and the atlas “whole map” fit use it. `ISLAND_BOUNDS` stays the island, so the reflected-light boxes in `js/tsl-materials.js` and the road-network z sweep still follow Hong Kong Island. Covering Kowloon in those two is a follow-up.
 
-### Where you stand
+## Full extract (committed module)
+
+Fetched 2026-10-24 with `bash tools/fetch-hk.sh` on the v1 bbox. Raw GeoJSON stays gitignored. `js/hk-geodata.js` is the playable module, committed as plain JavaScript the same way as `js/nyc-geodata.js`. It is 15,100,055 bytes (about 14.4 MiB). `js/nyc-geodata.js` is 1.1 MiB. That is under GitHub's 50 MB warning, so this file does not use Git LFS. Do not commit the raw extracts: buildings are 81 MB and highways are 30 MB.
+
+| Source | File | What came back | Size |
+|---|---|---|---|
+| LandsD Building | `landsd-buildings.geojson` | 70,183 features | 81 MB |
+| LandsD Road Centreline | `landsd-roads.geojson` | 15,222 features | 11 MB |
+| OSM coast | `osm_coast.json` | 634 ways, 28 relations | 2.3 MB |
+| OSM parks | `osm_parks.json` | 1,035 ways, 60 relations | 1.8 MB |
+| OSM landmarks | `osm_landmarks.json` | 1 way (name whitelist) | 3.6 KB |
+| OSM piers | `osm_piers.json` | 241 ways, 7 relations | 231 KB |
+| OSM highways | `osm_highways.json` | 33,903 ways | 30 MB |
+
+The module, compared with the Statue Square sample (7 blocks, 5 road polylines, 5 graph links, no parks):
+
+- Blocks: **53,113** footprints, **49,030** extruded (`TopHeight - BaseHeight`), **4,083** kept with no height, **17,087** specks dropped, **0** OSM building gaps, carpet **0**. `osm_buildings.json` is not part of `fetch-hk.sh`.
+- Roads: **11,692** polylines. Graph **16,084** nodes / **16,383** links / **2,298** names. **148,839** centreline pieces, **1,923** non-at-grade omitted, **392** non-carriageway skipped. OSM: **32,214** drivable ways after the graph filter, **13,308** centreline parts tagged, **3,652** gap links.
+- Shores: identical to the sample module. Harbour **13.33 km²**, Island **71.51 km²**, Kowloon **78.30 km²**, **49** piers, **4** harbour rings. Parks: **680** (the sample had none).
+- `landmarks` is `{}`. The landmark query is a name whitelist and returned one way; it is not copied onto the module. `buildLandmarks` still returns no meshes.
+- Central is inside Hong Kong Island. Admiralty is inside the island. Tsim Sha Tsui is inside Kowloon and not the island, north of the island's northernmost point (z = −1392). The harbour seed (114.1735, 22.2915) is inside the harbour ring and outside both shores, so the water stays between them. `PLAY_BOUNDS` is still the union of the two shores.
+
+```bash
+# Refresh the gitignored extracts, then rewrite the committed module.
+bash tools/fetch-hk.sh
+GEO_CITY=hk node --max-old-space-size=8192 tools/build-geodata.mjs
+```
+
+`fetch-hk.sh` runs LandsD (buildings and roads, default bbox) and then the five `q_hk_*.overpassql` queries through `tools/overpass.sh`. `--landsd-only` and `--osm-only` split that. `--sample` only refreshes the Statue Square LandsD fixture and skips Overpass.
+
+## Where you stand
 
 Walk, car, bike, and helicopter spawn at Central (the `central` teleport). The menu is 中環、尖沙咀、金鐘:
 

@@ -262,9 +262,15 @@ test('road input resolution prefers a full extract and does not mix it with the 
 });
 
 test('GEO_CITY=hk street CLI prints LandsD names, OSM width, and the gap', () => {
+  // Pin the Statue Square fixture. A local full centreline must not be paired with the sample highways.
   const result = spawnSync(process.execPath, [path.join(root, 'tools/geo-streets.mjs')], {
     encoding: 'utf8',
-    env: { ...process.env, GEO_CITY: 'hk' },
+    env: {
+      ...process.env,
+      GEO_CITY: 'hk',
+      GEO_HK_ROADS: path.join(root, 'tools/data/hk/samples/statue-square-roads.geojson'),
+      GEO_HK_OSM_ROADS: path.join(root, 'tools/data/hk/samples/statue-square-highways.json')
+    },
     timeout: 20000
   });
   assert.equal(result.status, 0, result.stderr + result.stdout);
