@@ -102,7 +102,7 @@ if (cityId === 'hk') {
 // NYC shape and then append [height, base, name] from LandsD TopHeight-BaseHeight.
 // Sources: Lands Department via CSDI Portal / DATA.GOV.HK (Building, Road Centreline);
 // coastline, Victoria Harbour, and piers © OpenStreetMap contributors (ODbL).
-// The default page still boots js/nyc-geodata.js. Open index.html?city=hk to load this module.
+// The default page boots this module. Manhattan is not a playable boot path.
 `;
   fs.writeFileSync(OUT, `${header}export const GEO = ${JSON.stringify(GEO)};\n`);
   console.error(`[geodata] GEO_CITY=${process.env.GEO_CITY} selects the Hong Kong frame (LAT0=${hk.LAT0}, LON0=${hk.LON0}, true north).`);

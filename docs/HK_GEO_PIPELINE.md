@@ -1,12 +1,12 @@
 # Hong Kong geodata pipeline
 
-The default page still boots the committed Manhattan scene in `js/nyc-geodata.js`. Cut 4 writes `js/hk-geodata.js`: the Cut 2 street graph, LandsD Building blocks (`TopHeight - BaseHeight`), and Victoria Harbour from OSM coast and water. Open `index.html?city=hk` to load that module. The Hong Kong file is a dynamic import, so the NYC preload does not fetch it.
+Cut 5 boots Hong Kong only. Opening `index.html` loads `js/hk-geodata.js` with no `?city=` parameter: the Cut 2 street graph, LandsD Building blocks (`TopHeight - BaseHeight`), and Victoria Harbour from OSM coast and water. The module is a static import, preloaded ahead of `js/geo-source.js` and `js/city-config.js`. `js/nyc-geodata.js` is not on the boot path. The visible interface is Traditional Chinese (繁體中文). Manhattan landmark meshes are not built.
 
 ## Frame
 
 `tools/geo-frame.mjs` is the source of the numbers in [HK_ORIGIN.md](HK_ORIGIN.md).
 
-| | Hong Kong (`GEO_CITY=hk`) | New York (default) |
+| | Hong Kong (`GEO_CITY=hk`, the page) | New York (tool rebuild only) |
 |---|---|---|
 | Origin | Central / Statue Square–Chater | 5th Ave & 42nd St centreline |
 | LAT0, LON0 | 22.28088, 114.15979 | 40.75318, -73.98185 |
@@ -174,18 +174,24 @@ node --test tests/hk-harbour.test.mjs tests/hk-geo.test.mjs tests/hk-blocks.test
 
 The sample build reports Victoria Harbour about 13.33 km² between Island about 71.51 km² and Kowloon about 78.30 km², with 49 piers. Central is the origin. Tsim Sha Tsui is about (988, −1447). Admiralty is about (499, 169), on the island.
 
-### Boot switch
+### Boot
 
-`js/geo-source.js` picks the module. The default is New York. `index.html?city=hk` wins over `GEO_CITY`. Node accepts `hk`, `hongkong`, and `hong-kong`. The map paints `GEO.harbour.rings` in the pond colour before the land fill, so the shores cover overlap. The existing water plane stays. NYC landmark meshes are still built on the Hong Kong switch; a later cut stubs those.
+`js/geo-source.js` always exports the Hong Kong module. `resolveRuntimeCity` returns `'hk'`. A `?city=` query and `GEO_CITY` do not switch the page. Node tool runs still accept `hk`, `hongkong`, and `hong-kong` for `GEO_CITY` when rebuilding data. The map paints `GEO.harbour.rings` in the pond colour before the land fill, so the shores cover overlap. The existing water plane stays. `buildLandmarks` returns no meshes when `frame.city` is `'hk'`, so Midtown props are not dropped on the origin. Procedural blocks stay.
+
+`index.html` preloads `js/hk-geodata.js`, then `js/geo-source.js`, then `js/city-config.js`, and the rest of the module graph (31 preloads). It does not preload `js/nyc-geodata.js`. `js/traffic.js` statically imports `js/pedestrian-routes.js`, so that file is preloaded too. The previous 29-count check stopped on the missing `geo-source.js` link and never reached it.
+
+### Shore helper
+
+`getIslandBoundsAtZ(z)` is still Hong Kong Island’s outermost west/east crossing, clamped at the island’s ends. `getIslandBoundsAtZ(z, x)` returns Kowloon’s crossing when `x` lies in that span and not the island’s, or when `z` is north of the island and still on Kowloon. Tsim Sha Tsui (about z = −1447) is north of the island’s northernmost point (z = −1392), so the one-argument helper would clamp it onto the island.
+
+`PLAY_BOUNDS` is the union of the two shores. The player clamp and the atlas “whole map” fit use it. `ISLAND_BOUNDS` stays the island, so the reflected-light boxes in `js/tsl-materials.js` and the road-network z sweep still follow Hong Kong Island. Covering Kowloon in those two is a follow-up.
 
 ### Where you stand
 
-Walk, car, bike, and helicopter still spawn at `streetZ(37)`. Hong Kong has no numbered streets, so that fallback is `(42 − 37) × 79.5 = 397.5` m, about 400 m south of Statue Square, still on the island. The teleport menu is how to stand on a named place:
+Walk, car, bike, and helicopter spawn at Central (the `central` teleport). The menu is 中環、尖沙咀、金鐘:
 
 | Button | Place | Lon, lat | Heading |
 |---|---|---|---|
-| Central | Statue Square | 114.15979, 22.28088 | π, face north toward the harbour |
-| Tsim Sha Tsui | Clock Tower | 114.16938, 22.29395 | 0, face south toward the island |
-| Admiralty | Admiralty MTR | 114.16463, 22.27935 | π, face north |
-
-Those buttons are hidden on the Manhattan page. `?city=hk` shows them and hides the Manhattan list.
+| 中環 | 皇后像廣場 | 114.15979, 22.28088 | π, face north toward the harbour |
+| 尖沙咀 | 鐘樓 | 114.16938, 22.29395 | 0, face south toward the island |
+| 金鐘 | 金鐘站 | 114.16463, 22.27935 | π, face north |

@@ -260,33 +260,20 @@ test('GEO_CITY=hk writes harbour geodata and leaves nyc-geodata alone', async ()
   fs.rmSync(empty, { recursive: true, force: true });
 });
 
-test('resolveRuntimeCity defaults to nyc and lets the query win', async () => {
+test('resolveRuntimeCity is Hong Kong even when a query or GEO_CITY asks for New York', async () => {
   const { resolveRuntimeCity } = await import(pathToFileURL(path.join(root, 'js/geo-source.js')).href);
-  assert.equal(resolveRuntimeCity({}, ''), 'nyc');
+  assert.equal(resolveRuntimeCity({}, ''), 'hk');
+  assert.equal(resolveRuntimeCity({ GEO_CITY: 'nyc' }, ''), 'hk');
+  assert.equal(resolveRuntimeCity({ GEO_CITY: 'nyc' }, '?city=nyc'), 'hk');
   assert.equal(resolveRuntimeCity({ GEO_CITY: 'hongkong' }, ''), 'hk');
-  assert.equal(resolveRuntimeCity({ GEO_CITY: 'hong-kong' }, ''), 'hk');
-  assert.equal(resolveRuntimeCity({ GEO_CITY: 'nyc' }, '?city=hk'), 'hk');
-  assert.equal(resolveRuntimeCity({ GEO_CITY: 'hk' }, '?city=nyc'), 'nyc');
+  assert.equal(resolveRuntimeCity({ GEO_CITY: 'hong-kong' }, '?city=hk'), 'hk');
 });
 
-test('unset GEO_CITY keeps the Manhattan frame', () => {
-  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-boot-nyc-'));
-  const script = path.join(empty, 'boot.mjs');
-  fs.writeFileSync(script, `
-    import { GEO, RUNTIME_CITY } from ${JSON.stringify(pathToFileURL(path.join(root, 'js/geo-source.js')).href)};
-    if (RUNTIME_CITY !== 'nyc') process.exit(2);
-    if (GEO.frame.city) process.exit(3);
-    if (!String(GEO.frame.origin).includes('42nd')) process.exit(4);
-  `);
-  const env = { ...process.env };
-  delete env.GEO_CITY;
-  const result = spawnSync(process.execPath, [script], { encoding: 'utf8', env, timeout: 20000 });
-  assert.equal(result.status, 0, result.stderr + result.stdout);
-  fs.rmSync(empty, { recursive: true, force: true });
-});
-
-test('GEO_CITY=hk loads the Hong Kong module', () => {
-  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-boot-hk-'));
+test('the shipped module is Hong Kong without GEO_CITY or a query', () => {
+  const source = fs.readFileSync(path.join(root, 'js/geo-source.js'), 'utf8');
+  assert.match(source, /from '\.\/hk-geodata\.js'/);
+  assert.doesNotMatch(source, /nyc-geodata/);
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-boot-default-'));
   const script = path.join(empty, 'boot.mjs');
   fs.writeFileSync(script, `
     import { GEO, RUNTIME_CITY } from ${JSON.stringify(pathToFileURL(path.join(root, 'js/geo-source.js')).href)};
@@ -297,9 +284,25 @@ test('GEO_CITY=hk loads the Hong Kong module', () => {
     const keys = Object.keys(GEO.points);
     if (!keys.includes('central') || !keys.includes('tst') || !keys.includes('admiralty')) process.exit(6);
   `);
+  const env = { ...process.env };
+  delete env.GEO_CITY;
+  const result = spawnSync(process.execPath, [script], { encoding: 'utf8', env, timeout: 20000 });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  fs.rmSync(empty, { recursive: true, force: true });
+});
+
+test('GEO_CITY=nyc cannot select the Manhattan module', () => {
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-boot-nyc-'));
+  const script = path.join(empty, 'boot.mjs');
+  fs.writeFileSync(script, `
+    import { GEO, RUNTIME_CITY } from ${JSON.stringify(pathToFileURL(path.join(root, 'js/geo-source.js')).href)};
+    if (RUNTIME_CITY !== 'hk') process.exit(2);
+    if (GEO.frame.city !== 'hk') process.exit(3);
+    if (!String(GEO.frame.origin).includes('Central')) process.exit(4);
+  `);
   const result = spawnSync(process.execPath, [script], {
     encoding: 'utf8',
-    env: { ...process.env, GEO_CITY: 'hk' },
+    env: { ...process.env, GEO_CITY: 'nyc' },
     timeout: 20000
   });
   assert.equal(result.status, 0, result.stderr + result.stdout);

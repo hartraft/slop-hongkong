@@ -5,6 +5,7 @@ import {
   NYC_LANDMARKS,
   LANDMARK_SITES,
   ISLAND_BOUNDS,
+  PLAY_BOUNDS,
   getIslandBoundsAtZ,
   MANHATTAN_COASTLINE,
   WATERFRONT_PIERS,
@@ -37,7 +38,7 @@ import {
 // drives, the shore highways, the real street centrelines (labelled along their course), the surrounding boroughs and
 // New Jersey, the harbour islands and the bridges.
 
-const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const FONT = '"Noto Sans TC", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const MIN_ZOOM = 0.015; // full map, pixels per metre: the whole harbour, Staten Island to the Bronx
 const MAX_ZOOM = 3.0; // single lots
 const RADAR_SCALE = 0.32; // radar pixels per metre on the ground (zooms out with altitude)
@@ -84,7 +85,11 @@ const MODELLED_LANDMARKS = [
 ];
 
 // Borough (0), waterway (1) & neighbourhood (2) names at their real places (world metres)
-const AREA_LABELS = [
+const AREA_LABELS = GEO.frame && GEO.frame.city === 'hk' ? [
+  ['香港', 2800, 1800, 0], ['香港島', 1600, 3400, 0], ['九龍', 2400, -4300, 0],
+  ['維多利亞港', 2000, -900, 1],
+  ['中環', 0, 90, 2], ['金鐘', 499, 240, 2], ['尖沙咀', 988, -1550, 2]
+] : [
   ['MANHATTAN', 120, -1500, 0], ['NEW JERSEY', -7000, 2000, 0], ['BROOKLYN', 7850, 8780, 0], ['QUEENS', 8810, -1680, 0],
   ['THE BRONX', 1010, -9640, 0], ['STATEN ISLAND', -1800, 19220, 0],
   ['HUDSON RIVER', -2680, -300, 1], ['HUDSON RIVER', -2650, -5600, 1], ['EAST RIVER', 1700, 800, 1],
@@ -452,7 +457,7 @@ class NYCMapSystem {
     this.miniScale = RADAR_SCALE;
     this.miniCache = null; // { canvas, cx, cz, s, version }: the radar's ground layers, twice the radar's size
     const elCounts = document.getElementById('fullmap-counts');
-    if (elCounts) elCounts.textContent = `${ROAD_NAME_COUNT} streets · ${BLOCKS.length.toLocaleString('en-US')} blocks`;
+    if (elCounts) elCounts.textContent = `${ROAD_NAME_COUNT} 條街道 · ${BLOCKS.length.toLocaleString('zh-Hant')} 個街段`;
 
     // The map is drawn grid north up; the compass needle points to true north, 29° to its left
     const needle = document.getElementById('map-compass-needle');
@@ -468,7 +473,7 @@ class NYCMapSystem {
     this.elHoverInfo = document.getElementById('fullmap-hover-info');
     this.elPlayerInfo = document.getElementById('fullmap-player-info');
     this.elSearchInput = document.getElementById('fullmap-search');
-    if (this.elSearchInput) this.elSearchInput.placeholder = `Search ${ROAD_NAME_COUNT} streets & landmarks…`;
+    if (this.elSearchInput) this.elSearchInput.placeholder = `搜尋 ${ROAD_NAME_COUNT} 條街道與地標…`;
 
     this.isFullMapOpen = false;
     // Full map viewport state (world metres; zoom in CSS pixels per metre)
@@ -485,8 +490,11 @@ class NYCMapSystem {
     this.searchPath = null;
     this.textWidths = new Map();
     // Default GTA 6-style active GPS waypoint (Times Square / Broadway)
-    const ts = NYC_LANDMARKS.find((l) => l.id === 'timessquare') || { x: 0, z: 0 };
-    this.waypoint = { x: ts.x, z: ts.z, name: 'Times Square & 42nd St' };
+    const home = NYC_LANDMARKS.find((l) => l.id === 'central')
+      || NYC_LANDMARKS.find((l) => l.id === 'timessquare')
+      || NYC_LANDMARKS[0]
+      || { x: 0, z: 0 };
+    this.waypoint = { x: home.x, z: home.z, name: home.name || '中環' };
 
     // Street names measured before the web font arrived would be spaced for the fallback font: measure & draw again
     if (document.fonts) {
@@ -539,7 +547,7 @@ class NYCMapSystem {
     if (fullIslandBtn) {
       fullIslandBtn.addEventListener('click', () => {
         // Fits all of Manhattan, from the Harlem River to the Battery
-        const b = ISLAND_BOUNDS;
+        const b = PLAY_BOUNDS || ISLAND_BOUNDS;
         const { w, h } = this.fullSize();
         this.viewCenterX = (b.minX + b.maxX) * 0.5;
         this.viewCenterZ = (b.minZ + b.maxZ) * 0.5;
@@ -598,7 +606,7 @@ class NYCMapSystem {
           const wPos = this.screenToWorld(mx, my, rect.width, rect.height);
           this.hoverWorld = wPos;
           if (this.elHoverInfo) {
-            this.elHoverInfo.textContent = `${getLocationLabel(wPos.x, wPos.z)} · Click to teleport here`;
+            this.elHoverInfo.textContent = `${getLocationLabel(wPos.x, wPos.z)} · 按一下傳送到這裡`;
           }
         }
       });
@@ -744,8 +752,9 @@ class NYCMapSystem {
 
   // Teleports land on Manhattan: inside the island's extent at that latitude
   clampToManhattan(p) {
-    const z = Math.max(ISLAND_BOUNDS.minZ + 25, Math.min(ISLAND_BOUNDS.maxZ - 25, p.z));
-    const shore = getIslandBoundsAtZ(z);
+    const bounds = PLAY_BOUNDS || ISLAND_BOUNDS;
+    const z = Math.max(bounds.minZ + 25, Math.min(bounds.maxZ - 25, p.z));
+    const shore = getIslandBoundsAtZ(z, p.x);
     return { x: Math.max(shore.westX + 12, Math.min(shore.eastX - 12, p.x)), z };
   }
 
@@ -1113,7 +1122,7 @@ class NYCMapSystem {
 
     const ent = this.controllerManager.getActiveEntity();
     if (this.elPlayerInfo) {
-      const text = `You are at ${getLocationLabel(ent.position.x, ent.position.z)}`;
+      const text = `你在 ${getLocationLabel(ent.position.x, ent.position.z)}`;
       if (text !== this.playerInfoText) {
         this.playerInfoText = text;
         this.elPlayerInfo.textContent = text;

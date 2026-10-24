@@ -1,6 +1,6 @@
 # tools/data/hk
 
-Hong Kong source data. The default page still boots `js/nyc-geodata.js`. `GEO_CITY=hk node tools/build-geodata.mjs` writes `js/hk-geodata.js` (streets, LandsD blocks, Victoria Harbour, piers). Open `index.html?city=hk` to load it.
+Hong Kong source data. The default page boots `js/hk-geodata.js`. `GEO_CITY=hk node tools/build-geodata.mjs` rewrites that file (streets, LandsD blocks, Victoria Harbour, piers). Open `index.html` with no query parameter.
 
 - `samples/` — Statue Square–Chater LandsD excerpt, plus `statue-square-highways.json` (a few-metre offset of those centrelines, one extra way, and a footway the graph must ignore). `harbour-coast.json` and `harbour-piers.json` are the OSM coast and pier fixtures the committed `js/hk-geodata.js` was built from. Refresh the LandsD files with `node tools/fetch-landsd.mjs --sample`.
 - `landsd-buildings.geojson` and `landsd-roads.geojson` — full Island + Kowloon extracts. Gitignored. The street graph prefers `landsd-roads.geojson` over the sample. Blocks prefer `landsd-buildings.geojson`.

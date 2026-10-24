@@ -1,18 +1,12 @@
 // js/geo-source.js
-// Default boot stays the committed Manhattan scene. index.html?city=hk (or GEO_CITY=hk under Node)
-// loads js/hk-geodata.js instead. The Hong Kong module is a dynamic import, so the NYC preload
-// does not fetch it.
+// The shipped page is Hong Kong only. js/hk-geodata.js is a static import so index.html can
+// preload it. There is no Manhattan boot path and no ?city= switch.
 
-import { GEO as NYC_GEO } from './nyc-geodata.js';
+import { GEO } from './hk-geodata.js';
 
-export function resolveRuntimeCity(env = {}, search = '') {
-  const query = new URLSearchParams(String(search).replace(/^\?/, '')).get('city') || '';
-  const raw = (query || env.GEO_CITY || '').trim().toLowerCase();
-  if (raw === 'hk' || raw === 'hongkong' || raw === 'hong-kong') return 'hk';
-  return 'nyc';
+export function resolveRuntimeCity() {
+  return 'hk';
 }
 
-const search = typeof location !== 'undefined' && location.search ? location.search : '';
-const env = typeof process !== 'undefined' && process.env ? process.env : {};
-export const RUNTIME_CITY = resolveRuntimeCity(env, search);
-export const GEO = RUNTIME_CITY === 'hk' ? (await import('./hk-geodata.js')).GEO : NYC_GEO;
+export const RUNTIME_CITY = 'hk';
+export { GEO };

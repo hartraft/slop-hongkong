@@ -1,11 +1,13 @@
 import * as THREE from 'three/webgpu';
 import {
   ISLAND_BOUNDS,
+  PLAY_BOUNDS,
   CENTRAL_PARK_BOUNDS,
   getIslandBoundsAtZ,
   isTypingInField,
   blockAt,
-  streetZ
+  streetZ,
+  TELEPORT_LOCATIONS
 } from './city-config.js';
 import { cityUniforms, createCarPaintMaterial, createContactShadowMaterial } from './tsl-materials.js';
 import {
@@ -31,8 +33,13 @@ import { bryantParkLawn } from './landmarks.js';
 // 3. Cyclist (Sculpted Road Cyclist with Drop-Bar Frame & Aero Helmet)
 // 4. Helicopter (Manhattan Sightseeing Twin-Turbine Chopper)
 
-// Spawn on 5th Ave at 37th St, facing south down the avenue toward the Empire State Building (34th St)
-const SPAWN_Z = streetZ(37);
+// Hong Kong opens at Central (Statue Square). The Manhattan fallback is 37th St, used only if that
+// teleport is absent from the stubbed module under test.
+const SPAWN = TELEPORT_LOCATIONS && TELEPORT_LOCATIONS.central
+  ? TELEPORT_LOCATIONS.central
+  : { x: 0, z: streetZ(37), heading: 0 };
+const SPAWN_X = SPAWN.x;
+const SPAWN_Z = SPAWN.z;
 const groundCollider = { type: 'ground' };
 
 const CAR_DRIVE = {
@@ -310,6 +317,7 @@ class ThirdPersonControllerManager {
     const extZ = (car ? Math.abs(sinH) * 0.86 + Math.abs(cosH) * 2.18 : radius) + 0.1;
     const reach = Math.max(extX, extZ);
     const margin = heli ? 6000 : 0;
+    const play = PLAY_BOUNDS || ISLAND_BOUNDS;
     const entity = this.getActiveEntity();
     // Conservative body cylinders, including the taxi's corners, bicycle wheels and helicopter tail/rotor.
     const body = { person: [0.48, 1.9], car: [2.4, 1.9], cyclist: [1.0, 1.9], helicopter: [6.2, 3.2] };
@@ -320,10 +328,10 @@ class ThirdPersonControllerManager {
     const cameraBack = Math.cos(0.09) * entity.chaseDistance;
     const cameraUp = entity.chaseHeight + Math.sin(0.09) * entity.chaseDistance * 0.85;
     const clampPoint = (px, pz) => {
-      pz = Math.max(ISLAND_BOUNDS.minZ + (heli ? -6000 : 30), Math.min(ISLAND_BOUNDS.maxZ + margin, pz));
-      px = Math.max(ISLAND_BOUNDS.minX - margin, Math.min(ISLAND_BOUNDS.maxX + margin, px));
+      pz = Math.max(play.minZ + (heli ? -6000 : 30), Math.min(play.maxZ + margin, pz));
+      px = Math.max(play.minX - margin, Math.min(play.maxX + margin, px));
       if (!heli && getIslandBoundsAtZ) {
-        const shore = getIslandBoundsAtZ(pz);
+        const shore = getIslandBoundsAtZ(pz, px);
         const west = shore.westX + 8, east = shore.eastX - 8;
         if (west > east) return null;
         px = Math.max(west, Math.min(east, px));
@@ -360,8 +368,8 @@ class ThirdPersonControllerManager {
     const origin = clampPoint(x, z);
     if (clear(origin)) return origin;
     // Four-metre rings cover nearby streets and courtyards, with bounded work even for a click inside a large block.
-    const cx = origin ? origin.x : Math.max(ISLAND_BOUNDS.minX, Math.min(ISLAND_BOUNDS.maxX, x));
-    const cz = origin ? origin.z : Math.max(ISLAND_BOUNDS.minZ + 30, Math.min(ISLAND_BOUNDS.maxZ, z));
+    const cx = origin ? origin.x : Math.max(play.minX, Math.min(play.maxX, x));
+    const cz = origin ? origin.z : Math.max(play.minZ + 30, Math.min(play.maxZ, z));
     for (let distance = 4; distance <= 256; distance += 4) {
       for (let i = 0; i < 32; i++) {
         const angle = i * Math.PI / 16;
@@ -396,11 +404,11 @@ class ThirdPersonControllerManager {
 
     return {
       type: 'person',
-      label: 'Pedestrian',
+      label: '行人',
       mesh: root,
       crowd,
       rig,
-      position: new THREE.Vector3(-11.6, ISLAND_BOUNDS.sidewalkHeight, SPAWN_Z + 12),
+      position: new THREE.Vector3(SPAWN_X - 11.6, ISLAND_BOUNDS.sidewalkHeight, SPAWN_Z + 12),
       heading: 0,
       speed: 0,
       verticalVel: 0,
@@ -502,13 +510,13 @@ class ThirdPersonControllerManager {
 
     return {
       type: 'car',
-      label: 'Taxi',
+      label: '的士',
       mesh: root,
       chassisPivot,
       carState,
       headLights,
       wheels,
-      position: new THREE.Vector3(3.6, 0.0, SPAWN_Z + 12),
+      position: new THREE.Vector3(SPAWN_X + 3.6, 0.0, SPAWN_Z + 12),
       heading: 0,
       speed: 0,
       vx: 0,
@@ -663,7 +671,7 @@ class ThirdPersonControllerManager {
 
     return {
       type: 'cyclist',
-      label: 'Cyclist',
+      label: '單車手',
       mesh: root,
       leanPivot,
       frontWheel,
@@ -675,7 +683,7 @@ class ThirdPersonControllerManager {
       riderRig,
       helmet,
       headLight,
-      position: new THREE.Vector3(5.2, 0.0, SPAWN_Z - 8),
+      position: new THREE.Vector3(SPAWN_X + 5.2, 0.0, SPAWN_Z - 8),
       heading: 0,
       speed: 0,
       leanAngle: 0,
@@ -754,12 +762,12 @@ class ThirdPersonControllerManager {
 
     return {
       type: 'helicopter',
-      label: 'Sightseeing Helicopter',
+      label: '直升機',
       mesh: root,
       tiltPivot,
       mainRotorPivot,
       tailRotorPivot,
-      position: new THREE.Vector3(-110, 96, SPAWN_Z - 60),
+      position: new THREE.Vector3(SPAWN_X - 110, 96, SPAWN_Z - 60),
       heading: 0.62,
       speed: 0,
       verticalSpeed: 0,
@@ -837,10 +845,11 @@ class ThirdPersonControllerManager {
     // The detailed island (the helicopter may roam out over the harbour & the boroughs)
     const heli = this.activeMode === 'helicopter';
     const m = heli ? 6000 : 0;
-    pos.x = Math.max(ISLAND_BOUNDS.minX - m, Math.min(ISLAND_BOUNDS.maxX + m, pos.x));
-    pos.z = Math.max(ISLAND_BOUNDS.minZ + (heli ? -6000 : 30), Math.min(ISLAND_BOUNDS.maxZ + m, pos.z));
+    const play = PLAY_BOUNDS || ISLAND_BOUNDS;
+    pos.x = Math.max(play.minX - m, Math.min(play.maxX + m, pos.x));
+    pos.z = Math.max(play.minZ + (heli ? -6000 : 30), Math.min(play.maxZ + m, pos.z));
     if (this.activeMode !== 'helicopter' && getIslandBoundsAtZ) {
-      const shore = getIslandBoundsAtZ(pos.z);
+      const shore = getIslandBoundsAtZ(pos.z, pos.x);
       const minShoreX = shore.westX + 8.0;
       const maxShoreX = shore.eastX - 8.0;
       if (pos.x < minShoreX) {

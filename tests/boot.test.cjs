@@ -26,11 +26,15 @@ test('city module preloads start after the import map and before stylesheets', (
 
 test('native module entry and imports share canonical preloaded URLs on GitHub Pages', () => {
   const links = preloads.map((match) => match[1]);
-  assert.equal(links.length, 29);
+  assert.equal(links.length, 31);
   assert.equal(new Set(links).size, links.length, 'each module is preloaded once');
   assert.equal(entries.length, 1);
   assert.equal(entries[0][1], './js/main.js');
   assert.ok(links.includes(entries[0][1]));
+  assert.equal(links[0], './js/hk-geodata.js');
+  assert.equal(links.includes('./js/nyc-geodata.js'), false);
+  assert.ok(links.indexOf('./js/geo-source.js') < links.indexOf('./js/city-config.js'), 'geo-source preloads before city-config');
+  assert.ok(links.indexOf('./js/geo-source.js') > links.indexOf('./js/hk-geodata.js'));
   assert.equal([...html.matchAll(/<script\b/g)].length, 2, 'only the import map and native entry are needed');
   const base = 'https://example.test/slop-newyork/';
   const urls = new Set(links.map((src) => new URL(src, base).href));

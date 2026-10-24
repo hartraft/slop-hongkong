@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { GEO } from './geo-source.js';
 import { getBlockBounds, LANDMARK_SITES, BLOCKS } from './city-config.js';
 import {
   createPreWarBuildingMaterial,
@@ -15,6 +16,10 @@ let bryantParkLawn;
 // Custom architectural 3D models for Midtown Manhattan's iconic landmarks
 
 function buildLandmarks(scene) {
+  // Manhattan landmark meshes are authored at Midtown coordinates and fall back to (0, 0)
+  // when GEO.landmarks is empty. Hong Kong keeps the procedural blocks and does not build them.
+  if (GEO.frame && GEO.frame.city === 'hk') return { colliders: [] };
+
   const group = new THREE.Group();
   group.name = 'ManhattanLandmarks';
   const colliders = [];
