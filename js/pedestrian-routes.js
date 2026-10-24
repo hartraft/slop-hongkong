@@ -44,16 +44,26 @@ function createPedestrianRoutes({ walkable, onSidewalk }, blockAt) {
     if (crossings.has(n)) return crossings.get(n);
     const result = [];
     crossings.set(n, result);
-    if (!n.signal) return result;
-    for (let side = 0; side < 4; side++) {
+    if (!n.signal || !n.road) return result;
+    const seen = new Set();
+    for (let side = 0; side < n.road.length; side++) {
       const road = n.road[side];
-      if (!road) continue;
-      const avenue = side >= 2, sign = side % 2 === 0 ? 1 : -1;
-      for (const line of avenue ? [sign * 0.75] : [-0.75, 0.75]) {
-        const a = { x: avenue ? road.x0 - road.half - 2 : n.x + sign * (n.hx + 1.25) + line,
-          z: avenue ? n.z + sign * (n.hz + 1.25) + line : road.z0 - road.half - 2 };
-        const len = road.half * 2 + 4;
-        const b = { x: a.x + (avenue ? len : 0), z: a.z + (avenue ? 0 : len) };
+      if (!road || !road.dx || seen.has(road)) continue;
+      seen.add(road);
+      const span = road.len || road.span;
+      const fromEnd = Math.hypot(road.x0 - n.x, road.z0 - n.z);
+      const toEnd = Math.hypot(road.x0 + road.dx * span - n.x, road.z0 + road.dz * span - n.z);
+      const atStart = fromEnd <= toEnd;
+      const sign = atStart ? 1 : -1;
+      const cx = atStart ? road.x0 : road.x0 + road.dx * span;
+      const cz = atStart ? road.z0 : road.z0 + road.dz * span;
+      const back = road.half + 2;
+      const len = road.half * 2 + 4;
+      for (const line of [-0.75, 0.75]) {
+        const ox = road.rx * line + road.dx * sign * 1.25;
+        const oz = road.rz * line + road.dz * sign * 1.25;
+        const a = { x: cx - road.rx * back + ox, z: cz - road.rz * back + oz };
+        const b = { x: a.x + road.rx * len, z: a.z + road.rz * len };
         if (!onSidewalk(a.x, a.z) || !onSidewalk(b.x, b.z) || !clear(a, b)) continue;
         result.push(segment(a, b, { node: n, side, line, from: n, to: n }));
       }

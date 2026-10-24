@@ -249,8 +249,7 @@ function buildRoadNetwork(sidewalks, obstacles) {
     for (const n of [p.from, p.to]) n.hz = Math.max(n.hz, Math.abs(p.z - n.z) + Math.min(p.half, 13));
   }
 
-  // 4b. Non-grid streets: Lower Manhattan, Broadway and the curved avenues farther north, from
-  //     the street centreline graph (GEO.roadGraph, tools/geo-roadgraph.mjs), minus the links the grid corridors above
+  // 4b. Centreline streets from the street graph (GEO.roadGraph, tools/geo-roadgraph.mjs), minus the links the grid corridors above
   //     already carry. Its junctions join the grid where they meet it (at a grid intersection, on an avenue corridor or a
   //     cross street); a street's bends get shape nodes, so every edge stays straight.
   const genRuns = centrelineStreets();

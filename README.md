@@ -14,4 +14,4 @@ Fork it, remix it, improve it, break it. Make games, animations, films, experime
 
 The project code is available under the [MIT License](LICENSE).
 
-The playable page uses Lands Department data via the [CSDI Portal](https://portal.csdi.gov.hk/) / [DATA.GOV.HK](https://data.gov.hk/) for buildings and the road centreline, and © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL) for Victoria Harbour, the coast, and piers. `js/nyc-geodata.js` remains in the tree so the Manhattan rebuild tools still run; the page does not load it. Third-party data and dependencies retain their respective licenses.
+The playable page uses Lands Department data via the [CSDI Portal](https://portal.csdi.gov.hk/) / [DATA.GOV.HK](https://data.gov.hk/) for buildings and the road centreline, and © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL) for Victoria Harbour, the coast, and piers. The page loads `js/hk-geodata.js` only. Third-party data and dependencies retain their respective licenses.

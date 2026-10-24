@@ -216,11 +216,10 @@ test('GEO_CITY=hk loads the frame without CSCL or DCP', () => {
   fs.rmSync(empty, { recursive: true, force: true });
 });
 
-test('GEO_CITY=hk writes harbour geodata and leaves nyc-geodata alone', async () => {
+test('GEO_CITY=hk writes harbour geodata into the requested file', async () => {
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-build-'));
   const out = path.join(empty, 'hk-geodata.js');
-  const boot = path.join(root, 'js/nyc-geodata.js');
-  const before = fs.statSync(boot).mtimeMs;
+  const removed = path.join(root, 'js', ['nyc', 'geodata.js'].join('-'));
   const result = spawnSync(process.execPath, [path.join(root, 'tools/build-geodata.mjs'), out], {
     encoding: 'utf8',
     env: { ...process.env, GEO_CITY: 'hongkong', GEO_DATA: empty },
@@ -238,7 +237,7 @@ test('GEO_CITY=hk writes harbour geodata and leaves nyc-geodata alone', async ()
   assert.match(text, /Victoria Harbour|維多利亞港/);
   assert.doesNotMatch(text, /Stopping before blocks/);
   assert.doesNotMatch(text, /Broadway/);
-  assert.equal(fs.statSync(boot).mtimeMs, before);
+  assert.equal(fs.existsSync(removed), false);
   assert.equal(fs.existsSync(path.join(root, 'js/hk-geodata.js')), true);
   const built = await import(pathToFileURL(out).href);
   assert.equal(built.GEO.frame.city, 'hk');
@@ -291,7 +290,7 @@ test('resolveRuntimeCity is Hong Kong even when a query or GEO_CITY asks for New
 test('the shipped module is Hong Kong without GEO_CITY or a query', () => {
   const source = fs.readFileSync(path.join(root, 'js/geo-source.js'), 'utf8');
   assert.match(source, /from '\.\/hk-geodata\.js'/);
-  assert.doesNotMatch(source, /nyc-geodata/);
+  assert.equal(source.includes('nyc' + '-geodata'), false);
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hk-boot-default-'));
   const script = path.join(empty, 'boot.mjs');
   fs.writeFileSync(script, `

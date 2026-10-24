@@ -1,6 +1,6 @@
 # Hong Kong geodata pipeline
 
-Cut 5 boots Hong Kong only. The committed `js/hk-geodata.js` is the full Island + Kowloon extract (fetched 2026-10-24), not the Statue Square sample. Opening `index.html` loads that module with no `?city=` parameter: the LandsD centreline plus OSM highways, LandsD Building blocks (`TopHeight - BaseHeight`), Victoria Harbour from OSM coast and water, and OSM parks. The module is a static import, preloaded ahead of `js/geo-source.js` and `js/city-config.js`. `js/nyc-geodata.js` is not on the boot path. The visible interface is Traditional Chinese (繁體中文). Manhattan landmark meshes are not built (`buildLandmarks` returns nothing when `frame.city` is `'hk'`).
+Cut 5 boots Hong Kong only. The committed `js/hk-geodata.js` is the full Island + Kowloon extract (fetched 2026-10-24), not the Statue Square sample. Opening `index.html` loads that module with no `?city=` parameter: the LandsD centreline plus OSM highways, LandsD Building blocks (`TopHeight - BaseHeight`), Victoria Harbour from OSM coast and water, and OSM parks. The module is a static import, preloaded ahead of `js/geo-source.js` and `js/city-config.js`. The second-city geodata module was removed in step 6 and is not loaded. The visible interface is Traditional Chinese (繁體中文). `buildLandmarks` calls `buildHkLandmarks`.
 
 A checkout without the gitignored extracts still builds. `GEO_CITY=hk node tools/build-geodata.mjs` then falls back to the Statue Square centreline and buildings plus the harbour samples, and it would overwrite `js/hk-geodata.js` with that small module. Regenerate the committed file only after `bash tools/fetch-hk.sh`.
 
@@ -17,7 +17,7 @@ A checkout without the gitignored extracts still builds. `GEO_CITY=hk node tools
 
 `tools/geo-base.mjs` reads `GEO_CITY`. Unset or `nyc` runs the existing Manhattan shoreline build and still requires the NYC inputs below. `hk` (aliases `hongkong`, `hong-kong`) sets the Hong Kong frame and does not open CSCL or DCP.
 
-`GEO_CITY=hk node tools/build-geodata.mjs` builds the street graph, the blocks, and the harbour, writes `js/hk-geodata.js`, and exits 0. It does not rewrite `js/nyc-geodata.js`. An optional second argument is the output path. `tools/geo-blocks.mjs` dispatches: unset `GEO_CITY` (or `nyc`) still rasterises Manhattan curb islands; `hk` calls `tools/geo-hk-blocks.mjs`. The Manhattan extra stage stays in `tools/geo-extra.mjs`. Hong Kong harbour is `tools/geo-hk-extra.mjs`.
+`GEO_CITY=hk node tools/build-geodata.mjs` builds the street graph, the blocks, and the harbour, writes `js/hk-geodata.js`, and exits 0. It does not write a second city module. An optional second argument is the output path. `tools/geo-blocks.mjs` dispatches: unset `GEO_CITY` (or `nyc`) still rasterises Manhattan curb islands; `hk` calls `tools/geo-hk-blocks.mjs`. The Manhattan extra stage stays in `tools/geo-extra.mjs`. Hong Kong harbour is `tools/geo-hk-extra.mjs`.
 
 ## v1 bbox
 
@@ -92,7 +92,7 @@ Without `tools/data/hk/landsd-roads.geojson`, the stage uses the committed Statu
 # (only when tools/data/hk/landsd-roads.geojson is absent)
 GEO_CITY=hk node tools/geo-streets.mjs
 
-# Streets, blocks, and harbour. Writes js/hk-geodata.js. Does not rewrite js/nyc-geodata.js.
+# Streets, blocks, and harbour. Writes js/hk-geodata.js. Does not write a second city module.
 GEO_CITY=hk node --max-old-space-size=8192 tools/build-geodata.mjs
 ```
 
@@ -178,7 +178,7 @@ The full extract and the sample coast report the same shores: Victoria Harbour 1
 
 ### Boot
 
-`js/geo-source.js` always exports the Hong Kong module. `resolveRuntimeCity` returns `'hk'`. A `?city=` query and `GEO_CITY` do not switch the page. Node tool runs still accept `hk`, `hongkong`, and `hong-kong` for `GEO_CITY` when rebuilding data. The map paints `GEO.harbour.rings` in the pond colour before the land fill, so the shores cover overlap. The existing water plane stays. `buildLandmarks` calls `buildHkLandmarks` and does not call `buildNycLandmarks`. Named Central places sit on their LandsD footprints or the Central Star Ferry pier. Victoria Peak and the Tsim Sha Tsui clock stay unbuilt. `buildCityBlocks` extrudes the Central core only (below), except the Bank of China Tower shaft, which the landmark prisms replace. The Manhattan lot filler is not called.
+`js/geo-source.js` always exports the Hong Kong module. `resolveRuntimeCity` returns `'hk'`. A `?city=` query and `GEO_CITY` do not switch the page. Node tool runs still accept `hk`, `hongkong`, and `hong-kong` for `GEO_CITY` when rebuilding data. The map paints `GEO.harbour.rings` in the pond colour before the land fill, so the shores cover overlap. The existing water plane stays. `buildLandmarks` calls `buildHkLandmarks`. Named Central places sit on their LandsD footprints or the Central Star Ferry pier. Victoria Peak and the Tsim Sha Tsui clock stay unbuilt. `buildCityBlocks` extrudes the Central core only (below), except the Bank of China Tower shaft, which the landmark prisms replace.
 
 ### Central core buildings
 
@@ -190,17 +190,17 @@ The visible massing is the Central CBD, not the full Island + Kowloon extract. `
 
 A block is inside when its centroid lies in that box in the world frame (the same local ENU as `tools/geo-frame.mjs`). On the committed module that is 2,021 footprints. 1,943 have a positive `TopHeight - BaseHeight` and are extruded from `poly` with `ExtrudeGeometry` (the same outline path as `createExtrudedPolygonMesh`). 78 have a null height and are skipped (`HK_NULL_HEIGHT = 'skip'`): no stand-in slab and no invented storeys. The other 51,092 footprints are not built. The axis-aligned box stored on an empty `rects` list is not the mesh. Committed tuples do not carry courtyard holes, so a court extrudes as its outer ring.
 
-`index.html` preloads `js/hk-geodata.js`, then `js/geo-source.js`, then `js/city-config.js`, and the rest of the module graph (31 preloads). It does not preload `js/nyc-geodata.js`. `js/traffic.js` statically imports `js/pedestrian-routes.js`, so that file is preloaded too. The previous 29-count check stopped on the missing `geo-source.js` link and never reached it.
+`index.html` preloads `js/hk-geodata.js`, then `js/geo-source.js`, then `js/city-config.js`, and the rest of the module graph (31 preloads). The atlas module is `js/hk-map.js`. `js/traffic.js` statically imports `js/pedestrian-routes.js`, so that file is preloaded too. The previous 29-count check stopped on the missing `geo-source.js` link and never reached it.
 
 ### Shore helper
 
 `getIslandBoundsAtZ(z)` is Hong Kong Island’s outermost west/east crossing, clamped at the island’s ends. `getIslandBoundsAtZ(z, x)` returns Kowloon’s crossing when `x` lies in that span and not the island’s, or when `z` is north of the island and still on Kowloon. Tsim Sha Tsui (about z = −1447) is north of the island’s northernmost point (z = −1392), so the one-argument helper would clamp it onto the island.
 
-`ISLAND_BOUNDS` and `PLAY_BOUNDS` are the same box: Hong Kong Island, Kowloon, and the Victoria Harbour rings. The island ring alone is not the water or player box. The water material does not reflect a Midtown / New Jersey / Brooklyn skyline.
+`ISLAND_BOUNDS` and `PLAY_BOUNDS` are the same box: Hong Kong Island, Kowloon, and the Victoria Harbour rings. The island ring alone is not the water or player box. The water material does not paint an extra skyline on top of the harbour.
 
 ## Full extract (committed module)
 
-Fetched 2026-10-24 with `bash tools/fetch-hk.sh` on the v1 bbox. Raw GeoJSON stays gitignored. `js/hk-geodata.js` is the playable module, committed as plain JavaScript the same way as `js/nyc-geodata.js`. It is 15,100,055 bytes (about 14.4 MiB). `js/nyc-geodata.js` is 1.1 MiB. That is under GitHub's 50 MB warning, so this file does not use Git LFS. Do not commit the raw extracts: buildings are 81 MB and highways are 30 MB.
+Fetched 2026-10-24 with `bash tools/fetch-hk.sh` on the v1 bbox. Raw GeoJSON stays gitignored. `js/hk-geodata.js` is the playable module, committed as plain JavaScript. It is about 14.4 MiB. That is under GitHub's 50 MB warning, so this file does not use Git LFS. Do not commit the raw extracts: buildings are 81 MB and highways are 30 MB.
 
 | Source | File | What came back | Size |
 |---|---|---|---|

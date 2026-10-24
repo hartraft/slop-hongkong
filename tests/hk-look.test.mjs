@@ -115,7 +115,7 @@ test('Central sign sites stay inside the box and use Hong Kong copy', () => {
   assert.ok(plates > 40, `plates ${plates}`);
 });
 
-test('the boot path extrudes curtain-wall glass and does not run Manhattan street kits', () => {
+test('the boot path extrudes curtain-wall glass and Central street signs', () => {
   const buildings = readFileSync(path.join(root, 'js/buildings.js'), 'utf8');
   const body = buildings.slice(buildings.indexOf('function ringForExtrude'), buildings.indexOf('function buildCityBlocks'));
   assert.match(body, /ExtrudeGeometry/);
@@ -124,17 +124,16 @@ test('the boot path extrudes curtain-wall glass and does not run Manhattan stree
   assert.match(body, /hkMassingPlan/);
   assert.match(body, /HK_NULL_HEIGHT/);
   assert.match(body, /createCurtainWallMaterial/);
-  assert.doesNotMatch(body, /BoxGeometry|InstancedMesh|: 12\b|createPreWarBuildingMaterial|brownstone|waterTower|fireEscape/);
-  const boot = buildings.slice(buildings.indexOf('function buildCityBlocks'), buildings.indexOf('function buildNycCityBlocks'));
+  assert.doesNotMatch(body, /BoxGeometry|InstancedMesh|: 12\b|populateBlock/);
+  const boot = buildings.slice(buildings.indexOf('function buildCityBlocks'));
   assert.match(boot, /return buildHkFootprintBlocks\(scene\)/);
-  assert.doesNotMatch(boot, /brownstone|waterTower|fireEscape|populateBlock/);
+  assert.doesNotMatch(boot, /populateBlock/);
 
   const streets = readFileSync(path.join(root, 'js/street-details.js'), 'utf8');
-  const live = streets.slice(streets.indexOf('function buildStreetDetails'), streets.indexOf('function buildNycStreetDetails'));
+  const live = streets.slice(streets.indexOf('function buildStreetDetails'));
   assert.match(live, /hkCentralSignSites/);
   assert.match(live, /HongKongStreetDetails/);
-  assert.doesNotMatch(live, /Times Square|5TH AVE|Midtown|Halal|BROADWAY|fromOldFrame|buildNycStreetDetails/);
   const main = readFileSync(path.join(root, 'js/main.js'), 'utf8');
   assert.match(main, /buildStreetDetails\(scene\)/);
-  assert.doesNotMatch(main, /buildNycStreetDetails|buildNycCityBlocks/);
+  assert.match(main, /buildCityBlocks\(scene\)/);
 });

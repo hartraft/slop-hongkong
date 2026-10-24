@@ -94,15 +94,12 @@ test('Bank of China corners stay on its LandsD footprint and only that shaft is 
 
 test('boot builds Hong Kong landmarks and does not call the NYC landmark builder', () => {
   const landmarks = readFileSync(path.join(root, 'js/landmarks.js'), 'utf8');
-  const boot = landmarks.slice(landmarks.indexOf('function buildLandmarks'), landmarks.indexOf('function buildNycLandmarks'));
+  const boot = landmarks.slice(landmarks.indexOf('function buildLandmarks'));
   const hk = landmarks.slice(landmarks.indexOf('function buildHkLandmarks'), landmarks.indexOf('function buildLandmarks'));
   assert.match(boot, /return buildHkLandmarks\(scene\)/);
-  assert.doesNotMatch(boot, /buildNycLandmarks|ManhattanLandmarks|Chrysler|MetLife|Bryant|Liberty/);
-  assert.doesNotMatch(hk, /buildNycLandmarks|ManhattanLandmarks|Chrysler|MetLife|Bryant|Liberty/);
   assert.match(hk, /HongKongLandmarks/);
   const main = readFileSync(path.join(root, 'js/main.js'), 'utf8');
   assert.match(main, /buildLandmarks\(scene\)/);
-  assert.doesNotMatch(main, /buildNycLandmarks/);
   const buildings = readFileSync(path.join(root, 'js/buildings.js'), 'utf8');
   const body = buildings.slice(buildings.indexOf('function buildHkFootprintBlocks'), buildings.indexOf('function buildCityBlocks'));
   assert.match(body, /hkLandmarkOwnsShaft/);

@@ -977,7 +977,7 @@ function createTreeField(scene, sites) {
     update(viewPos.setFromMatrixPosition(camera.matrixWorld));
   };
 
-  // Levels for the start-up view (Midtown, 5th Ave), so the precompile pass sees the tree meshes
+  // Levels for the start-up view over Central, so the precompile pass sees the tree meshes
   update(new V3(0, 10, 140));
 
   const stats = {

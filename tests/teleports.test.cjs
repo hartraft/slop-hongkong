@@ -41,14 +41,12 @@ test('Hong Kong teleports are Central, Tsim Sha Tsui, and Admiralty', () => {
   assert.equal(getLocationLabel(admiralty.x, admiralty.z).startsWith('金鐘'), true);
 });
 
-test('Hong Kong boot does not build Manhattan landmark meshes', () => {
+test('Hong Kong boot builds landmarks from the Hong Kong catalog', () => {
   const landmarks = read('js/landmarks.js');
   const boot = landmarks.indexOf('function buildLandmarks');
-  const nyc = landmarks.indexOf('function buildNycLandmarks');
-  const meshes = landmarks.indexOf("group.name = 'ManhattanLandmarks'");
-  assert.ok(boot > 0 && nyc > boot && meshes > nyc, 'the NYC landmark mesh stays inside buildNycLandmarks');
-  assert.match(landmarks.slice(boot, nyc), /return buildHkLandmarks\(scene\)/);
-  assert.doesNotMatch(landmarks.slice(boot, nyc), /ManhattanLandmarks|buildNycLandmarks/);
+  assert.ok(boot > 0);
+  assert.match(landmarks.slice(boot), /return buildHkLandmarks\(scene\)/);
+  assert.match(landmarks, /HongKongLandmarks/);
 });
 
 test('preset and map teleports share arrival resets and mark the resolved landing point', () => {
@@ -71,7 +69,7 @@ test('preset and map teleports share arrival resets and mark the resolved landin
     getLocationLabel: (x, z) => `${x}, ${z}`,
     cityBlocks: { allBlocks: [] },
     trafficSystem: {},
-    NYCMapSystem: class {
+    HkMapSystem: class {
       constructor(options) { this.onTeleport = options.onTeleport; map = this; }
     },
     teleportButtons: Object.keys(TELEPORT_LOCATIONS).map((key) => ({

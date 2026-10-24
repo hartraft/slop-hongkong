@@ -1,7 +1,7 @@
 import { GEO } from './geo-source.js';
 import {
   ROADS,
-  NYC_LANDMARKS,
+  PLACES,
   ISLAND_BOUNDS,
   PLAY_BOUNDS,
   getIslandBoundsAtZ,
@@ -9,13 +9,13 @@ import {
   isTypingInField
 } from './city-config.js';
 
-// js/nyc-map.js
+// js/hk-map.js
 // Live radar and full-screen atlas, 1:1 with the 3D world (1 unit = 1 m, x = east, z = south).
 // Hong Kong is true north (GEO.frame.bearingDeg === 0). Land is GEO.hongKongIsland and GEO.kowloon,
 // water is GEO.harbour, streets are GEO.roads, lots are GEO.blocks.
 
 const FONT = '"Noto Sans TC", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-const MIN_ZOOM = 0.015; // full map, pixels per metre: the whole harbour, Staten Island to the Bronx
+const MIN_ZOOM = 0.015; // full map, pixels per metre: Island, Kowloon, and Victoria Harbour
 const MAX_ZOOM = 3.0; // single lots
 const RADAR_SCALE = 0.32; // radar pixels per metre on the ground (zooms out with altitude)
 const GRID_BEARING = GEO.frame && Number.isFinite(GEO.frame.bearingDeg) ? GEO.frame.bearingDeg : 0;
@@ -334,7 +334,7 @@ function drawWaypoint(ctx, x, y, r) {
 
 const overlaps = (boxes, b) => boxes.some((o) => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]);
 
-class NYCMapSystem {
+class HkMapSystem {
   constructor({ controllerManager, cameraSystem, trafficSystem, allBlocks = [], onTeleport, onToggle }) {
     this.controllerManager = controllerManager;
     this.cameraSystem = cameraSystem;
@@ -382,10 +382,8 @@ class NYCMapSystem {
     this.searchHighlight = '';
     this.searchPath = null;
     this.textWidths = new Map();
-    // Default GTA 6-style active GPS waypoint (Times Square / Broadway)
-    const home = NYC_LANDMARKS.find((l) => l.id === 'central')
-      || NYC_LANDMARKS.find((l) => l.id === 'timessquare')
-      || NYC_LANDMARKS[0]
+    const home = PLACES.find((l) => l.id === 'central')
+      || PLACES[0]
       || { x: 0, z: 0 };
     this.waypoint = { x: home.x, z: home.z, name: home.name || '中環' };
 
@@ -513,7 +511,7 @@ class NYCMapSystem {
           const mx = e.clientX - rect.left;
           const my = e.clientY - rect.top;
           if (mx >= 0 && mx <= rect.width && my >= 0 && my <= rect.height) {
-            const wPos = this.clampToManhattan(this.screenToWorld(mx, my, rect.width, rect.height));
+            const wPos = this.clampToCoast(this.screenToWorld(mx, my, rect.width, rect.height));
             this.waypoint = {
               x: wPos.x,
               z: wPos.z,
@@ -561,7 +559,7 @@ class NYCMapSystem {
     this.searchHighlight = q;
     this.searchPath = null;
     if (q.length > 0) {
-      const lmMatch = NYC_LANDMARKS.find((l) => l.name.toLowerCase().includes(q) || l.short.toLowerCase().includes(q));
+      const lmMatch = PLACES.find((l) => l.name.toLowerCase().includes(q) || l.short.toLowerCase().includes(q));
       const roads = ROAD_LABELS.filter((l) => l.lower.includes(q) || l.raw.includes(q));
       if (roads.length) {
         this.searchPath = new Path2D();
@@ -643,8 +641,8 @@ class NYCMapSystem {
     };
   }
 
-  // Teleports land on Manhattan: inside the island's extent at that latitude
-  clampToManhattan(p) {
+  // Teleports stay on the coast ring at that latitude.
+  clampToCoast(p) {
     const bounds = PLAY_BOUNDS || ISLAND_BOUNDS;
     const z = Math.max(bounds.minZ + 25, Math.min(bounds.maxZ - 25, p.z));
     const shore = getIslandBoundsAtZ(z, p.x);
@@ -876,7 +874,7 @@ class NYCMapSystem {
     }
 
     // Landmark blips
-    for (const lm of NYC_LANDMARKS) {
+    for (const lm of PLACES) {
       const lx = toX(lm.x);
       const ly = toY(lm.z);
       if (Math.abs(lx) < w * 0.48 && Math.abs(ly) < h * 0.48) {
@@ -1005,7 +1003,7 @@ class NYCMapSystem {
     ctx.font = `700 11px ${FONT}`;
     const placed = [];
     const pins = [];
-    for (const lm of NYC_LANDMARKS) {
+    for (const lm of PLACES) {
       const lx = toX(lm.x);
       const ly = toY(lm.z);
       if (Math.abs(lx) > w * 0.48 || Math.abs(ly) > h * 0.48) continue;
@@ -1109,4 +1107,4 @@ class NYCMapSystem {
   }
 }
 
-export { NYCMapSystem };
+export { HkMapSystem };

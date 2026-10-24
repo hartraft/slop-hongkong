@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BLOCKS, ROADS, districtAt, TELEPORT_LOCATIONS, ISLAND_BOUNDS, PLAY_BOUNDS, NJ_SHORELINE_POLYGON, HONG_KONG_ISLAND_COASTLINE, KOWLOON_COASTLINE, getIslandBoundsAtZ } from '../js/city-config.js';
+import { BLOCKS, ROADS, districtAt, TELEPORT_LOCATIONS, ISLAND_BOUNDS, PLAY_BOUNDS, HONG_KONG_ISLAND_COASTLINE, KOWLOON_COASTLINE, getIslandBoundsAtZ } from '../js/city-config.js';
 import { GEO } from '../js/hk-geodata.js';
 
 test('every committed HK footprint keeps its LandsD height and a lot rect', () => {
@@ -31,7 +31,7 @@ test('every committed HK footprint keeps its LandsD height and a lot rect', () =
   assert.ok(BLOCKS.length - missingHeight > 40000);
 });
 
-test('districts and spawn stay on the Hong Kong coast, not numbered Manhattan streets', () => {
+test('districts and spawn stay on the Hong Kong coast', () => {
   assert.deepEqual([TELEPORT_LOCATIONS.central.x, TELEPORT_LOCATIONS.central.z], [0, 0]);
   assert.equal(districtAt(0, 0), 'hk_cbd');
   assert.equal(districtAt(988.3, -1447.3), 'hk_kowloon');
@@ -45,7 +45,6 @@ test('shore bounds cover Island, Kowloon, and Victoria Harbour', () => {
   assert.equal(GEO.boroughs.newJersey, undefined);
   assert.ok(HONG_KONG_ISLAND_COASTLINE.length > 100);
   assert.ok(KOWLOON_COASTLINE.length > 100);
-  assert.equal(NJ_SHORELINE_POLYGON.length, 0);
   assert.equal(PLAY_BOUNDS, ISLAND_BOUNDS);
   const inside = (x, z) => x >= ISLAND_BOUNDS.minX && x <= ISLAND_BOUNDS.maxX && z >= ISLAND_BOUNDS.minZ && z <= ISLAND_BOUNDS.maxZ;
   assert.equal(inside(0, 0), true);

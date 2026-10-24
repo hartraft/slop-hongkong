@@ -46,15 +46,9 @@ if (cityId === 'hk') {
     version: 1,
     frame: frameOut,
     hongKongIsland: flat(harbour.island),
-    upperManhattan: [],
     innerShore: flat(harbour.island),
     islands: {},
-    boroughs: {
-      brooklyn: [],
-      queens: [],
-      bronx: [],
-      statenIsland: []
-    },
+    boroughs: {},
     kowloon: flat(harbour.kowloon),
     streets: [],
     avenues: [],
@@ -99,10 +93,10 @@ if (cityId === 'hk') {
 // Polygons and polylines are flat [x0, z0, x1, z1, ...] arrays.
 // Hong Kong Island is \`hongKongIsland\`. Kowloon is \`kowloon\`.
 // \`harbour\` is Victoria Harbour between them (OSM coast and water). Block tuples match the
-// NYC shape and then append [height, base, name] from LandsD TopHeight-BaseHeight.
+// shared block tuple shape and then append [height, base, name] from LandsD TopHeight-BaseHeight.
 // Sources: Lands Department via CSDI Portal / DATA.GOV.HK (Building, Road Centreline);
 // coastline, Victoria Harbour, and piers © OpenStreetMap contributors (ODbL).
-// The default page boots this module. Manhattan is not a playable boot path.
+// The default page boots this module.
 `;
   fs.writeFileSync(OUT, `${header}export const GEO = ${JSON.stringify(GEO)};\n`);
   console.error(`[geodata] GEO_CITY=${process.env.GEO_CITY} selects the Hong Kong frame (LAT0=${hk.LAT0}, LON0=${hk.LON0}, true north).`);
@@ -121,7 +115,7 @@ if (cityId === 'hk') {
     console.error('[geodata] OSM buildings file not found. LandsD footprints are the blocks. Optional gap fill: tools/data/hk/osm_buildings.json');
   }
   console.error(`[geodata] Cut 4 harbour: ${harbour.harbourName}, ${harbour.report.harbourKm2.toFixed(2)} km² between Island ${harbour.report.islandKm2.toFixed(2)} km² and Kowloon ${harbour.report.kowloonKm2.toFixed(2)} km², ${harbour.piers.length} piers. Coast ${extraInputs.coast}${extraInputs.usedSampleCoast ? ' (sample)' : ''}.`);
-  console.error(`[geodata] wrote ${OUT} (${(fs.statSync(OUT).size / 1024).toFixed(0)} KB). js/nyc-geodata.js was not rewritten.`);
+  console.error(`[geodata] wrote ${OUT} (${(fs.statSync(OUT).size / 1024).toFixed(0)} KB).`);
   process.exit(0);
 }
 

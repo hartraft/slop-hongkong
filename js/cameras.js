@@ -8,12 +8,12 @@ const CAMERA_PRESETS = [
   { id: 'chase',       name: '第三人稱',   short: '跟隨',   category: 'follow', fov: 56 },
   { id: 'action',      name: '低角度',     short: '低角度', category: 'follow', fov: 60 },
   { id: 'pov',         name: '第一人稱',   short: '第一人稱', category: 'follow', fov: 68 },
-  { id: 'centralPark', name: '中環海濱',   short: '海濱',   category: 'scenic', fov: 52 },
-  { id: 'fifthAve',    name: '皇后像廣場', short: '中環',   category: 'scenic', fov: 48 },
-  { id: 'timesSquare', name: '金鐘',       short: '金鐘',   category: 'scenic', fov: 58 },
-  { id: 'chryslerGCT', name: '尖沙咀',     short: '尖沙咀', category: 'scenic', fov: 50 },
-  { id: 'observatory', name: '高空俯瞰',   short: '高空',   category: 'scenic', fov: 52 },
-  { id: 'bryantPark',  name: '交易廣場',   short: '交易廣場', category: 'scenic', fov: 52 },
+  { id: 'harbourfront',  name: '中環海濱',   short: '海濱',   category: 'scenic', fov: 52 },
+  { id: 'statueSquare',  name: '皇后像廣場', short: '中環',   category: 'scenic', fov: 48 },
+  { id: 'admiralty',     name: '金鐘',       short: '金鐘',   category: 'scenic', fov: 58 },
+  { id: 'tstClock',      name: '尖沙咀',     short: '尖沙咀', category: 'scenic', fov: 50 },
+  { id: 'observatory',   name: '高空俯瞰',   short: '高空',   category: 'scenic', fov: 52 },
+  { id: 'exchangeSquare', name: '交易廣場',  short: '交易廣場', category: 'scenic', fov: 52 },
   { id: 'waterfront',  name: '維多利亞港', short: '維港',   category: 'scenic', fov: 46 },
   { id: 'drone',       name: '航拍',       short: '航拍',   category: 'scenic', fov: 50 }
 ];
@@ -254,7 +254,7 @@ class CameraSystem {
         break;
       }
 
-      case 'centralPark': {
+      case 'harbourfront': {
         // Central waterfront, looking north across Victoria Harbour
         const sway = Math.sin(elapsed * 0.22) * 3.5;
         desiredPos.set(40.0 + sway, 16.0, 70.0);
@@ -262,7 +262,7 @@ class CameraSystem {
         break;
       }
 
-      case 'fifthAve': {
+      case 'statueSquare': {
         // Statue Square, looking north toward the harbour
         const sway = Math.sin(elapsed * 0.25) * 1.8;
         desiredPos.set(-6.0 + sway, 8.0, 30.0);
@@ -270,7 +270,7 @@ class CameraSystem {
         break;
       }
 
-      case 'timesSquare': {
+      case 'admiralty': {
         // Admiralty, looking north
         const sway = Math.sin(elapsed * 0.3) * 3.0;
         desiredPos.set(470.0 + sway, 14.0, 240.0);
@@ -278,7 +278,7 @@ class CameraSystem {
         break;
       }
 
-      case 'chryslerGCT': {
+      case 'tstClock': {
         // Tsim Sha Tsui Clock Tower, looking south toward Hong Kong Island
         const sway = Math.cos(elapsed * 0.22) * 2.5;
         desiredPos.set(960.0 + sway, 14.0, -1360.0);
@@ -294,7 +294,7 @@ class CameraSystem {
         break;
       }
 
-      case 'bryantPark': {
+      case 'exchangeSquare': {
         // Exchange Square, looking toward the harbour
         const sway = Math.sin(elapsed * 0.25) * 1.5;
         desiredPos.set(-40.0, 12.0, 90.0 + sway);

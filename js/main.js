@@ -3,7 +3,7 @@ import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { createPostProcessing } from './post-processing.js';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
-import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
+import { getLocationLabel, isTypingInField, ROADS, PLACES, TELEPORT_LOCATIONS } from './city-config.js';
 import { buildCityGrid } from './city-grid.js';
 import { buildBoroughs } from './boroughs.js';
 import { buildLandmarks } from './landmarks.js';
@@ -16,7 +16,7 @@ import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
 import { LightingSystem } from './lighting.js';
-import { NYCMapSystem } from './nyc-map.js';
+import { HkMapSystem } from './hk-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js';
 
@@ -386,7 +386,7 @@ async function initApp() {
 
   // Where you are: the place's name over its street corner, drawn as a pair of NYC street-name signs
   const roadNames = new Set(ROADS.map((r) => r.name));
-  const placeNames = new Set(NYC_LANDMARKS.map((l) => l.name));
+  const placeNames = new Set(PLACES.map((l) => l.name));
   let locationText = '';
   function renderLocation(label) {
     if (!elLocation || label === locationText) return;
@@ -443,7 +443,7 @@ async function initApp() {
     return destination;
   }
 
-  const mapSystem = new NYCMapSystem({
+  const mapSystem = new HkMapSystem({
     controllerManager,
     cameraSystem,
     trafficSystem,
@@ -511,13 +511,13 @@ async function initApp() {
         selectCamera('pov', true);
         break;
       case 'Digit8':
-        selectCamera('fifthAve', true);
+        selectCamera('statueSquare', true);
         break;
       case 'Digit9':
-        selectCamera('timesSquare', true);
+        selectCamera('admiralty', true);
         break;
       case 'Digit0':
-        selectCamera('chryslerGCT', true);
+        selectCamera('tstClock', true);
         break;
       case 'KeyV':
         cycleCamera(e.shiftKey ? -1 : 1);

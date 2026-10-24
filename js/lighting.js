@@ -32,7 +32,7 @@ const TIME_PRESETS = {
   golden: {
     id: 'golden',
     name: 'Golden Hour · 17:45',
-    // Crisp Manhattan canyon sun slicing across avenues & intersections so buildings, cars, trees & pedestrians cast sharp shadows
+    // Crisp canyon sun slicing across streets and intersections so buildings, cars, trees and pedestrians cast sharp shadows
     sunDir: new THREE.Vector3(-0.44, 0.58, -0.68).normalize(),
     sunColor: 0xffca92,
     sunIntensity: 5.8,
@@ -110,7 +110,7 @@ const TIME_PRESETS = {
   },
   midnight: {
     id: 'midnight',
-    name: 'Manhattan Night · 23:00',
+    name: '維港夜色 · 23:00',
     sunDir: new THREE.Vector3(0.42, 0.68, -0.60).normalize(),
     sunColor: 0x8cb0e8,
     sunIntensity: 1.45,
@@ -149,7 +149,7 @@ class LightingSystem {
       renderer.library.addLight(SunLightNode, SunLight);
     }
 
-    // Fade across Island + Kowloon + Victoria Harbour, not a Manhattan-length island.
+    // Fade across Island + Kowloon + Victoria Harbour.
     const playSpan = Math.hypot(PLAY_BOUNDS.maxX - PLAY_BOUNDS.minX, PLAY_BOUNDS.maxZ - PLAY_BOUNDS.minZ);
     this.harbourFogScale = (2 / Math.max(playSpan, 1)) / TIME_PRESETS.golden.fogDensity;
     this.scene.fog = new THREE.FogExp2(0xdcc5ae, TIME_PRESETS.golden.fogDensity * this.harbourFogScale);
@@ -159,7 +159,7 @@ class LightingSystem {
     this.scene.background = null;
 
     // Physical Preetham SkyMesh + Beer-Powder Clouds (from three/addons/objects/SkyMesh.js). Its unit box must contain
-    // the camera wherever it flies over the 1:1 harbour (Manhattan alone is 13.6 km long; it renders at the far plane
+    // the camera wherever it flies over the 1:1 harbour (it renders at the far plane
     // whatever its size)
     this.sky = new SkyMesh();
     this.sky.scale.setScalar(200000);

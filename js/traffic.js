@@ -22,11 +22,11 @@ import {
 import { PersonCrowd, PersonRig } from './pedestrians.js';
 
 // js/traffic.js
-// Manhattan traffic and pedestrians on the road graph road-network.js derives from the city as built:
-// - 200 cars (taxis, sedans, SUVs, NYPD cruisers) and 12 MTA buses keep to their lanes and follow the vehicle
+// Hong Kong traffic and pedestrians on the road graph road-network.js derives from GEO.roadGraph:
+// - 200 cars (taxis, sedans, SUVs, police cruisers) and 12 buses keep to their lanes and follow the vehicle
 //   ahead (Intelligent Driver Model), change lanes to overtake or to reach a turn lane, turn into other streets,
-//   stop for the signals street-details.js shows, give way to oncoming traffic when turning left, to the avenue at
-//   unsignalized corners and to pedestrians on crosswalks, and never enter an intersection they can't clear.
+//   stop for signals, give way to oncoming traffic when turning left and to pedestrians on crosswalks,
+//   and never enter an intersection they can't clear.
 // - 340 pedestrians follow connected sidewalks, meet to talk, and cross signalized crosswalks on WALK.
 // - Fixed-size local populations replenish distant roads and sidewalks in every direction, protecting the near view.
 // - The player's vehicle or character pushes and is pushed by the traffic (SAT contact, impulses, sparks).
@@ -62,11 +62,11 @@ function createBusDestinationTexture() {
   ctx.font = '900 26px Inter, Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('M1', 37, 33);
+  ctx.fillText('1', 37, 33);
   ctx.fillStyle = '#ff9d1c';
-  ctx.font = '800 22px JetBrains Mono, monospace';
+  ctx.font = '800 22px "Noto Sans TC", "PingFang HK", sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('5 AV / HARLEM', 78, 33);
+  ctx.fillText('中環', 78, 33);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -76,7 +76,7 @@ const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
 function createTrafficSystem(scene, sidewalks, obstacles) {
   const group = new THREE.Group();
-  group.name = 'ManhattanTrafficAndPedestrians';
+  group.name = 'HongKongTrafficAndPedestrians';
   let collisionListener = null;
   const collisionEvent = { a: null, b: null, kind: 'vehicle', x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, speed: 0 };
 

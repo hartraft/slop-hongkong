@@ -159,7 +159,7 @@ const filteredPulse = Fn(([x, a, b, w]) => {
 
 /**
  * Occlusion-Aware Urban Canyon Sky Visibility (aoNode)
- * Models how Manhattan street canyons occlude overhead sky irradiance near the street floor (y = 0..65m),
+ * Models how street canyons occlude overhead sky irradiance near the street floor (y = 0..65m),
  * while opening up in Central Park and on upper tower shafts.
  */
 const canyonSkyAONode = Fn(() => {
@@ -179,7 +179,6 @@ const canyonSkyAONode = Fn(() => {
 
 // Material caches to prevent duplicate WebGPU WGSL shader compilation across blocks & landmarks
 const _curtainWallCache = new Map();
-const _preWarCache = new Map();
 
 // Camera-independent facade frame: the view/world normal round trip can change the dominant axis on 45-degree
 // walls. Resolve near-ties in the vertex shader and keep that choice flat across each face.
@@ -360,7 +359,7 @@ const evaluateApartmentInterior = Fn(([uCoord, vCoord, winUV, cellId, winWNode, 
 });
 
 /**
- * Treatment of each wall of a box-local facade box (createFacadeBoxes `faces`, read by facadeCell). shop: street front
+ * Treatment of each wall of a box-local facade box (the box-local facade mesh `faces`, read by facadeCell). shop: street front
  * with storefronts on the ground floor; entry: residential street front, windows down to the ground floor and one
  * entrance door; rear: yard, court & air-shaft walls, plain common brick with windows on every floor; lotLine:
  * windowless lot-line (party) wall, common brick or grey parging; blankStone: windowless wall in the facade's stone.
@@ -371,18 +370,18 @@ const WALL_KINDS = { shop: 0, entry: 1, rear: 2, lotLine: 3, blankStone: 4 };
  * Facade cell coordinates shared by the curtain-wall & pre-war materials: wall UV (u runs along whichever horizontal
  * axis the wall faces, v is world height), window cell id/UV, bay width, pixel footprint in cells (`fw`, for
  * filtering) and roof/ground-floor masks.
- * World-space by default. With `boxLocal` the mesh must come from createFacadeBoxes: u then starts at each wall's
+ * World-space by default. With `boxLocal` the mesh must come from the box-local facade mesh: u then starts at each wall's
  * corner and every wall fits a whole number of bays, so no window straddles a corner. `cornerPier` (m, box-local only)
  * keeps a solid band of wall at both ends of every wall (masonry corners): the bays fill the width between the piers
  * and `solid` is 1 inside the piers above the ground floor, where callers suppress windows, sills & AC units.
- * Box-local walls also read their treatment from the per-instance `faces` attribute (see WALL_KINDS / createFacadeBoxes):
+ * Box-local walls also read their treatment from the per-instance `faces` attribute (see WALL_KINDS / the box-local facade mesh):
  * `isGroundFloor` is 1 only on storefront ground floors, `door` marks the entrance bay of residential fronts, `back`
  * the plain common-brick rear & lot-line walls (tinted by the building's `tone`) and `blank` the windowless ones
  * (folded into `solid`); `wallS`, `wallW`, `wallH`, `fromTop` & `boxSeed` place things on the wall (painted signs).
  * Plain JS (not Fn) so it inlines into each node graph exactly like hand-written code.
  */
 function facadeCell(windowWidth, floorHeight, boxLocal, cornerPier = 0) {
-  // Box-local walls are told apart by the box's own normals (createFacadeBoxes instances may be turned about +y to
+  // Box-local walls are told apart by the box's own normals (the box-local facade mesh instances may be turned about +y to
   // follow a non-grid street); world-space walls by the world normal
   const nWall = boxLocal ? normalGeometry : facadeWorldNormal;
   const nW = abs(nWall);
@@ -563,7 +562,7 @@ function createCurtainWallMaterial(opts = {}) {
     const fresnel = pow(clamp(float(1.0).sub(abs(dot(viewDir, nPane))), 0.0, 1.0), 2.1);
     const reflectElev = clamp(reflectDir.y.mul(0.65).add(0.38), 0.0, 1.0);
 
-    // Reflected neighboring Manhattan skyscrapers silhouette, its edge & window grid filtered by their screen footprint
+    // Reflected neighbouring tower silhouette, its edge and window grid filtered by their screen footprint
     const refAzimuth = uCoord.mul(0.045).add(reflectDir.x.mul(3.8)).add(reflectDir.z.mul(3.8));
     const neighborTowerH = hash2D(vec2(floor(refAzimuth.mul(2.4)), uSeed)).mul(0.46).add(0.16);
     const elevAA = fwidth(reflectElev).add(0.004);
@@ -671,515 +670,8 @@ function createCurtainWallMaterial(opts = {}) {
   return mat;
 }
 
-/**
- * Pre-War Limestone, Terra Cotta, Running-Bond Brick & Brownstone TSL Material
- * Features (ported from SkyscraperGenerator.js):
- * - Anti-Aliased Running-Bond Brickwork with Domed Brick Face Relief (`bumpNormal`)
- * - Fast 3D Apartment Interior Mapping on Upper Floors (2D Glazing on Ground-Floor Shops)
- * - Protruding Window Air-Conditioner Units (`acUnits`) with Louver Relief & Condensate Grime
- * - Grimy Soda-Lime Window Glazing (pooled sill dirt + vertical rain streaks)
- * - Urban Canyon Global Illumination (`aoNode` + warm terracotta bounce)
- */
-function createPreWarBuildingMaterial(opts = {}) {
-  const {
-    stoneColor = 0xd8ceb8,
-    trimColor = 0x9e937f,
-    windowGlassColor = 0x162432,
-    windowWidth = 2.7,
-    floorHeight = 3.8,
-    windowRatioX = 0.50,
-    windowRatioY = 0.58,
-    litProbability = 0.36,
-    warmth = 0.82,
-    crownGlowHeight = 9999.0,
-    crownGlowColor = 0xffe0a3,
-    seed = 42.0,
-    boxLocal = false,
-    cornerPier = 1.2 // solid masonry at both ends of every wall above the shopfronts (box-local mode)
-  } = opts;
-
-  const cacheKey = `${stoneColor}_${trimColor}_${windowWidth}_${floorHeight}_${litProbability}_${warmth}_${crownGlowHeight}_${seed}_${boxLocal}_${cornerPier}`;
-  if (_preWarCache.has(cacheKey)) {
-    return _preWarCache.get(cacheKey);
-  }
-
-  const mat = new THREE.MeshStandardNodeMaterial({
-    metalness: 0.06,
-    roughness: 0.76
-  });
-
-  // The style's parameters are uniforms (not baked-in constants), so every masonry style compiles to one shader
-  const cStone = uniform(new THREE.Color(stoneColor));
-  const cTrim = uniform(new THREE.Color(trimColor));
-  const cGlass = uniform(new THREE.Color(windowGlassColor));
-  const cCrown = uniform(new THREE.Color(crownGlowColor));
-  const uWindowWidth = uniform(windowWidth);
-  const uFloorHeight = uniform(floorHeight);
-  const uLitProbability = uniform(litProbability);
-  const uWarmth = uniform(warmth);
-  const uCrownGlowHeight = uniform(crownGlowHeight);
-  const uSeed = uniform(seed);
-  const cSoot = color(0x4a4236);
-  const cWarmWindow = color(0xffcf86);
-  const cCoolWindow = color(0xcfe2ff);
-  const cCanyonBounce = color(0xe89c68);
-
-  const halfWinX = (1.0 - windowRatioX) * 0.5;
-  const halfWinY = (1.0 - windowRatioY) * 0.5;
-
-  mat.aoNode = canyonSkyAONode();
-
-  // The facade cell, the window opening and the apartment behind it are built once and shared by every output below,
-  // so the shader carries a single copy of them (and evaluates the interior mapping once per pixel)
-  const facade = facadeCell(uWindowWidth, uFloorHeight, boxLocal, cornerPier);
-  const { isRoof, uCoord, vCoord, gridV, cellId, cellUV, fw, bayWidth, isGroundFloor, solid, back, blank, door, tone } = facade;
-  const { wallS, wallW, wallH, fromTop, boxSeed, coping } = facade;
-  const open = float(1.0).sub(solid).mul(float(1.0).sub(door)); // 0 in the corner piers, blank walls & doorways
-  const front = float(1.0).sub(back).sub(blank).max(0.0); // street fronts (band courses, sills under the band...)
-  const effHalfX = mix(float(halfWinX), float(0.11), isGroundFloor);
-  const effHalfY = mix(float(halfWinY), float(0.10), isGroundFloor);
-  // Glazing UV inside the window opening, the 3D apartment behind it and the storefront lighting
-  const winUV = clamp(
-    vec2(
-      cellUV.x.sub(effHalfX).div(max(0.01, float(1.0).sub(effHalfX.mul(2.0)))),
-      cellUV.y.sub(effHalfY).div(max(0.01, float(1.0).sub(effHalfY.mul(2.0))))
-    ),
-    vec2(0.0),
-    vec2(1.0)
-  );
-  const aptRoom = evaluateApartmentInterior(uCoord, vCoord, winUV, cellId, bayWidth, uFloorHeight, uSeed, uWarmth, uLitProbability.mul(0.62), fw);
-  const shopLit = step(0.24, hash2D(cellId.add(vec2(uSeed, 19.4))));
-  const bulbCol = mix(cCoolWindow, cWarmWindow, step(float(1.0).sub(uWarmth), hash2D(cellId.add(vec2(uSeed.mul(1.9), 83.1)))));
-  // Window AC units (~12% of upper-floor windows), none in the floor the band course covers
-  const beltFloor = step(5.0, mod(floor(gridV), 6.0)).mul(front);
-  const acRand = hash2D(cellId.add(vec2(uSeed.mul(1.3).add(7.1), 91.7)));
-  const hasAC = step(0.88, acRand).mul(float(1.0).sub(isGroundFloor)).mul(float(1.0).sub(isRoof)).mul(open).mul(float(1.0).sub(beltFloor));
-
-  mat.colorNode = Fn(() => {
-    const oneMinusEffX = float(1.0).sub(effHalfX);
-    const oneMinusEffY = float(1.0).sub(effHalfY);
-
-    const inX = filteredPulse(cellUV.x, effHalfX, oneMinusEffX, fw.x).mul(open);
-    const inY = filteredPulse(cellUV.y, effHalfY, oneMinusEffY, fw.y);
-
-    // Horizontal cornice belt every 6 floors (street fronts only) + ground floor storefront fascia at top of floor 0
-    const cornicePhase = fract(gridV.div(6.0));
-    const isCornice = max(
-      filteredPulse(cornicePhase, 0.86, 1.0, fw.y.div(6.0)).mul(front),
-      isGroundFloor.mul(filteredPulse(cellUV.y, 0.86, 1.0, fw.y))
-    );
-
-    // Double-hung meeting rail on upper floors + storefront transom & mullions on ground floor
-    const sashBarY = lineAA(cellUV.y.sub(0.52), 0.012).mul(float(1.0).sub(isGroundFloor));
-    const sashBarX = lineAA(cellUV.x.sub(0.50), 0.009).mul(float(1.0).sub(isGroundFloor)).mul(0.55);
-    const storeTransom = lineAA(cellUV.y.sub(0.70), 0.015).mul(isGroundFloor);
-    const storeMullion = lineAA(fract(cellUV.x.mul(2.0)).sub(0.5), 0.018).mul(isGroundFloor);
-    const sashMask = clamp(max(max(sashBarY, sashBarX), max(storeTransom, storeMullion)), 0.0, 1.0);
-
-    // Protruding Window Air-Conditioner Unit, sitting on the sill (see hasAC)
-    const acMinX = float(0.31);
-    const acMaxX = float(0.69);
-    const acMinY = effHalfY;
-    const acMaxY = effHalfY.add(0.22);
-    const inACBox = filteredPulse(cellUV.x, acMinX, acMaxX, fw.x)
-      .mul(filteredPulse(cellUV.y, acMinY, acMaxY, fw.y))
-      .mul(hasAC);
-    const acUV = clamp(
-      vec2(cellUV.x.sub(acMinX).div(0.38), cellUV.y.sub(acMinY).div(0.22)),
-      vec2(0.0),
-      vec2(1.0)
-    );
-    const acGrille = smoothstep(0.08, 0.16, acUV.x).mul(float(1.0).sub(smoothstep(0.84, 0.92, acUV.x)))
-      .mul(smoothstep(0.14, 0.22, acUV.y)).mul(float(1.0).sub(smoothstep(0.84, 0.92, acUV.y)));
-    const acSlats = fract(acUV.y.mul(6.0));
-    const acPlastic = mix(color(0xf0eee8), color(0xcac6bc), fract(acRand.mul(7.3)));
-    const acColor = acPlastic.mul(mix(float(1.0), mix(float(0.38), float(0.75), acSlats), acGrille));
-    const acUnderShadow = filteredPulse(cellUV.x, acMinX.sub(0.02), acMaxX.add(0.02), fw.x)
-      .mul(filteredPulse(cellUV.y, effHalfY.sub(0.09), effHalfY, fw.y))
-      .mul(hasAC).mul(0.42);
-
-    const isWindowOpening = inX.mul(inY).mul(float(1.0).sub(isRoof)).mul(float(1.0).sub(isCornice));
-    const isWindowGlass = isWindowOpening.mul(float(1.0).sub(sashMask)).mul(float(1.0).sub(inACBox));
-
-    // Anti-Aliased Running-Bond Brickwork & Ashlar Stone Coursing
-    const brickH = 0.24;
-    const brickL = 0.56;
-    const rowCoord = vCoord.div(brickH);
-    const courseRow = floor(rowCoord);
-    const colCoord = uCoord.div(brickL).add(mod(courseRow, 2.0).mul(0.5));
-    // Rear, court & lot-line walls are plain common brick (red-brown or buff by building); lot-line walls weather in
-    // patches of grey parging (worked out on those walls only), some are parged all over
-    const backBrick = mix(
-      mix(color(0x6c3d30), color(0x8a503e), fract(tone.mul(7.31))),
-      mix(color(0x9a8669), color(0xb09a7a), fract(tone.mul(5.17))),
-      step(0.58, tone)
-    );
-    const parged = float(0.0).toVar();
-    If(blank.mul(back).greaterThan(0.5), () => {
-      const pargePatch = smoothstep(0.6, 0.76, noise2D(vec2(uCoord.mul(0.11), vCoord.mul(0.07)).add(tone.mul(37.0))));
-      parged.assign(max(step(0.74, fract(tone.mul(3.7))), pargePatch.mul(0.85)));
-    });
-    const backTint = mix(backBrick, color(0x8f8b84), parged);
-    const mortarJoint = max(
-      gridLine(colCoord.mul(brickL), brickL, 0.016),
-      gridLine(vCoord, brickH, 0.016)
-    ).mul(float(1.0).sub(isRoof)).mul(float(1.0).sub(parged)).mul(float(1.0).sub(coping));
-
-    // Per-brick tint fades out once bricks shrink to a pixel (and soot streaks once they do), so neither can shimmer
-    const uFw = fwidth(uCoord);
-    const brickVar = float(1.0).sub(smoothstep(0.5, 1.0, max(uFw.div(brickL), fwidth(rowCoord))));
-    const brickCell = vec2(floor(colCoord), courseRow);
-    const brickRnd = hash2D(brickCell.add(vec2(uSeed, 5.3))).sub(0.5).mul(brickVar);
-    const brickWarmShift = hash2D(brickCell.add(vec2(17.1, uSeed))).sub(0.5).mul(0.12).mul(brickVar);
-    const brickShiftVec = vec3(float(1.0).add(brickWarmShift), float(1.0), float(1.0).sub(brickWarmShift));
-
-    const streakNoise = mix(float(0.5), noise2D(vec2(uCoord.mul(1.4), vCoord.mul(0.05))), float(1.0).sub(smoothstep(0.5, 1.0, uFw.mul(1.4))));
-    const sootDirt = smoothstep(0.25, 0.78, streakNoise).mul(float(1.0).sub(smoothstep(0.0, 180.0, vCoord))).mul(0.36);
-
-    const lintelShadow = smoothstep(oneMinusEffY.sub(0.14), oneMinusEffY, cellUV.y).mul(0.58);
-    const jambShadow = float(1.0).sub(smoothstep(effHalfX, effHalfX.add(0.08), cellUV.x)).mul(0.42);
-    // No sills in the floor the band course covers
-    const sillSpan = filteredPulse(cellUV.x, effHalfX.sub(0.045), oneMinusEffX.add(0.045), fw.x).mul(open).mul(float(1.0).sub(beltFloor));
-    const isSillTop = filteredPulse(cellUV.y, effHalfY.sub(0.032), effHalfY, fw.y).mul(sillSpan);
-    const isSillUnderShadow = filteredPulse(cellUV.y, effHalfY.sub(0.075), effHalfY.sub(0.032), fw.y).mul(sillSpan);
-
-    const corniceShadow = smoothstep(0.76, 0.86, cornicePhase).mul(0.32).mul(front);
-
-    const canyonBand = smoothstep(0.0, 14.0, vCoord).mul(float(1.0).sub(smoothstep(22.0, 75.0, vCoord)));
-    const canyonGlow = cCanyonBounce.mul(canyonBand.mul(cityUniforms.uCanyonBounce).mul(0.22));
-
-    // Faded painted advertisement ("ghost sign") high on some lot-line walls: a panel with a line of tall block letters
-    // over a smaller one, flaking off the brick. The lettering is only worked out inside the panel.
-    const signW = min(wallW.sub(3.0), 18.0);
-    const signH = min(min(wallH.mul(0.3), signW.mul(0.42)), 6.5);
-    const hasSign = blank.mul(back).mul(float(1.0).sub(step(0.74, fract(tone.mul(3.7)))))
-      .mul(step(0.8, fract(tone.mul(13.7).add(boxSeed.mul(0.618)))))
-      .mul(step(5.0, signW)).mul(step(2.6, signH));
-    const su = wallS.sub(wallW.sub(signW).mul(0.5)).div(signW); // 0..1 across the panel
-    const sv = fromTop.sub(1.2).div(signH); // 0..1 down the panel
-    const signFw = vec2(fwidth(su), fwidth(sv));
-    const signPaint = vec4(0.0).toVar();
-    If(hasSign.mul(step(0.0, su)).mul(step(su, 1.0)).mul(step(0.0, sv)).mul(step(sv, 1.0)).greaterThan(0.5), () => {
-      const pal = fract(tone.mul(29.3));
-      const ground = mix(mix(color(0xd3c9ae), color(0x86392b), step(0.5, pal)), color(0x2b3340), step(0.8, pal));
-      const ink = mix(mix(color(0x6b2a20), color(0xddd2b6), step(0.5, pal)), color(0xd5c086), step(0.8, pal));
-      const border = float(1.0).sub(filteredPulse(su, 0.02, 0.98, signFw.x).mul(filteredPulse(sv, 0.045, 0.955, signFw.y)));
-      // Block letters: a vertical at the left (or middle) and maybe the right, bars at the top / middle / bottom
-      const lettering = (v0, v1, line) => {
-        const glyphW = signH.mul((v1 - v0) * 0.64);
-        const n = floor(signW.mul(0.86).div(glyphW));
-        const gx = su.mul(signW).sub(signW.sub(n.mul(glyphW)).mul(0.5)).div(glyphW);
-        const fy = sv.sub(v0).div(v1 - v0);
-        const wx = signFw.x.mul(signW).div(glyphW);
-        const wy = signFw.y.div(v1 - v0);
-        const fx = fract(gx);
-        const h1 = hash2D(vec2(floor(gx).add(line * 31.0), tone.mul(91.0)));
-        const h2 = hash2D(vec2(floor(gx).add(line * 31.0 + 7.0), tone.mul(53.0)));
-        const verticals = max(
-          max(filteredPulse(fx, 0.1, 0.28, wx).mul(step(0.22, h1)), filteredPulse(fx, 0.41, 0.59, wx).mul(step(h1, 0.22))),
-          filteredPulse(fx, 0.72, 0.9, wx).mul(step(0.45, h2))
-        );
-        const bars = max(
-          max(filteredPulse(fy, 0.0, 0.17, wy).mul(step(0.35, fract(h1.mul(7.0)))), filteredPulse(fy, 0.42, 0.58, wy).mul(step(0.5, fract(h2.mul(5.0))))),
-          filteredPulse(fy, 0.83, 1.0, wy).mul(step(0.4, fract(h1.mul(3.0))))
-        ).mul(filteredPulse(fx, 0.1, 0.9, wx));
-        const inText = step(0.0, gx).mul(step(gx, n)).mul(step(0.0, fy)).mul(step(fy, 1.0)).mul(step(0.1, fract(h2.mul(11.0))));
-        return max(verticals, bars).mul(inText);
-      };
-      const letters = max(lettering(0.14, 0.56, 0), lettering(0.66, 0.86, 1));
-      const flake = smoothstep(0.5, 0.74, noise2D(vec2(wallS.mul(0.7), fromTop.mul(1.1)).add(tone.mul(31.0))));
-      const cover = mix(float(0.34), float(0.66), fract(tone.mul(7.7))).mul(float(1.0).sub(flake.mul(0.9)));
-      signPaint.assign(vec4(mix(ground, ink, max(letters, border)), cover));
-    });
-
-    const wallTint = mix(mix(cStone, backTint, back), signPaint.xyz, signPaint.w);
-    // Trim stone on the band courses, the storefront fascia and the coping capping every wall
-    const trimMix = max(isCornice.mul(0.62).add(isGroundFloor.mul(0.28)), coping.mul(0.8));
-    const masonryTint = mix(wallTint, cTrim, trimMix)
-      .mul(brickRnd.mul(0.14).add(1.0))
-      .mul(brickShiftVec);
-    const masonryWithMortar = mix(masonryTint, masonryTint.mul(0.62), mortarJoint);
-    const masonryWeathered = mix(masonryWithMortar, cSoot, sootDirt)
-      .mul(float(1.0).sub(corniceShadow))
-      .mul(float(1.0).sub(isSillUnderShadow.mul(0.42)))
-      .mul(float(1.0).sub(acUnderShadow))
-      .add(cityUniforms.uSunColor.mul(isSillTop.mul(0.24)))
-      .add(canyonGlow);
-
-    // Upper apartment floors use 3D interior mapping behind grimy soda-lime glazing;
-    // ground-floor shops use 2D reflective storefront glass
-    const pooledDirt = float(1.0).sub(smoothstep(0.0, 0.32, winUV.y)).mul(0.36);
-    // Grimy soda-lime glazing film (SkyscraperGenerator.js line 1688): baseline haze so panes read as glass, not open holes
-    const upperGrime = float(0.52).add(sootDirt.mul(0.35)).add(pooledDirt).clamp(0.0, 0.90);
-
-    const viewDir = normalize(cameraPosition.sub(positionWorld));
-    const fresnel = pow(clamp(float(1.0).sub(abs(dot(viewDir, normalWorldGeometry))), 0.0, 1.0), 2.0);
-    const recessShade = float(1.0).sub(max(lintelShadow, jambShadow));
-
-    const upperGlassBase = mix(aptRoom.xyz.mul(color(0xb6c6bf)), cGlass, upperGrime);
-    const shopShelves = float(1.0).sub(step(0.76, fract(winUV.y.mul(3.0))).mul(0.34));
-    const shopInterior = bulbCol.mul(smoothstep(0.05, 0.92, winUV.y).mul(0.48).add(0.24)).mul(shopShelves).mul(shopLit);
-    const shopGlassBase = mix(cGlass, shopInterior, float(0.62).mul(float(1.0).sub(pooledDirt)));
-    const glassBase = mix(upperGlassBase, shopGlassBase, isGroundFloor);
-    const glassCol = mix(glassBase, cityUniforms.uSkyHorizonColor, fresnel.mul(0.52).add(0.08)).mul(recessShade);
-
-    const frameCol = masonryTint.mul(0.46).mul(recessShade);
-    const roofNoise = noise2D(positionWorld.xz.mul(0.35));
-    const roofCol = mix(cTrim.mul(0.42), cTrim.mul(0.62), roofNoise);
-
-    const wallOrRoof = mix(masonryWeathered, roofCol, isRoof);
-    const withFrames = mix(wallOrRoof, frameCol, isWindowOpening.mul(sashMask));
-    const withGlass = mix(withFrames, glassCol, isWindowGlass);
-    const withAC = mix(withGlass, acColor, inACBox);
-
-    // Entrance of a residential front: painted panel door under a glazed transom, in a stone surround (door bay only)
-    const finalCol = withAC.toVar();
-    If(door.greaterThan(0.5), () => {
-      const inDoorway = filteredPulse(cellUV.x, 0.27, 0.73, fw.x).mul(filteredPulse(cellUV.y, 0.065, 0.8, fw.y));
-      const surround = filteredPulse(cellUV.x, 0.21, 0.79, fw.x).mul(filteredPulse(cellUV.y, 0.0, 0.86, fw.y));
-      const transom = filteredPulse(cellUV.y, 0.67, 0.78, fw.y);
-      const doorRnd = fract(tone.mul(11.3));
-      const doorPaint = mix(
-        mix(color(0x1c1b1a), color(0x4c2018), step(0.35, doorRnd)),
-        mix(color(0x203528), color(0x6a4628), step(0.8, doorRnd)),
-        step(0.6, doorRnd)
-      );
-      // Meeting stiles & lock rail (box-filtered with the cell footprint: no derivatives in this branch)
-      const doorPanels = max(filteredPulse(cellUV.x, 0.494, 0.506, fw.x), filteredPulse(cellUV.y, 0.39, 0.41, fw.y));
-      const doorCol = mix(doorPaint.mul(float(1.0).sub(doorPanels.mul(0.5))), mix(cGlass, cityUniforms.uSkyHorizonColor, 0.18), transom);
-      finalCol.assign(mix(mix(withAC, cTrim.mul(0.85), surround), doorCol, inDoorway));
-    });
-    return finalCol;
-  })();
-
-  mat.roughnessNode = Fn(() => {
-    const belt = filteredPulse(gridV.div(6.0), 0.86, 1.0, fw.y.div(6.0)).mul(front);
-    const inX = filteredPulse(cellUV.x, halfWinX, 1.0 - halfWinX, fw.x).mul(open).mul(float(1.0).sub(belt));
-    const inY = filteredPulse(cellUV.y, halfWinY, 1.0 - halfWinY, fw.y);
-    const isWindow = inX.mul(inY).mul(float(1.0).sub(isRoof));
-
-    const winY = clamp(cellUV.y.sub(halfWinY).div(max(0.01, 1.0 - 2.0 * halfWinY)), 0.0, 1.0);
-    const pooledRough = float(1.0).sub(smoothstep(0.0, 0.32, winY)).mul(0.38);
-    const glassRough = float(0.14).add(pooledRough);
-
-    const stoneGrain = noise2D(vec2(uCoord.mul(8.0), vCoord.mul(8.0))).mul(0.12);
-    return mix(float(0.78).add(stoneGrain), glassRough, isWindow);
-  })();
-
-  // Hardware derivative bumpNormal for domed brickwork, stone courses, recessed windows & AC louvers. Edges ramp over
-  // >= 2px and the fine brick & louver relief fades before it shrinks to pixels: sharper height steps turn into
-  // derivative sparkles that crawl along every mortar joint & sill as the camera moves
-  mat.normalNode = Fn(() => {
-    const camDist = length(positionWorld.sub(cameraPosition));
-    const detailFade = float(1.0).sub(smoothstep(16.0, 150.0, camDist)).mul(float(1.0).sub(isRoof))
-      .mul(float(1.0).sub(smoothstep(0.03, 0.1, max(fw.x, fw.y))));
-    const ramp = fw.mul(2.0);
-    const footprint = max(fwidth(uCoord), fwidth(vCoord)); // Meters per pixel
-
-    // Stone band course every 6 floors on street fronts: no window recesses, sills or AC units in it
-    const belt = filteredPulse(gridV.div(6.0), 0.86, 1.0, ramp.y.div(6.0)).mul(front);
-    const inX = filteredPulse(cellUV.x, effHalfX, float(1.0).sub(effHalfX), ramp.x).mul(open).mul(float(1.0).sub(belt));
-    const inY = filteredPulse(cellUV.y, effHalfY, float(1.0).sub(effHalfY), ramp.y);
-    const isWindow = inX.mul(inY);
-
-    const brickH = 0.24;
-    const brickL = 0.56;
-    const rowCoord = vCoord.div(brickH);
-    const courseRow = floor(rowCoord);
-    const colCoord = uCoord.div(brickL).add(mod(courseRow, 2.0).mul(0.5));
-    const distU = float(0.5).sub(abs(fract(colCoord).sub(0.5))).mul(brickL);
-    const distV = float(0.5).sub(abs(fract(rowCoord).sub(0.5))).mul(brickH);
-    const brickDome = smoothstep(0.0, 0.018, distU).mul(smoothstep(0.0, 0.018, distV)).mul(0.0045)
-      .mul(float(1.0).sub(smoothstep(0.006, 0.012, footprint)));
-
-    const sillLedge = filteredPulse(cellUV.y, effHalfY.sub(0.032), effHalfY, ramp.y).mul(inX).mul(0.016);
-    const corniceLedge = belt.mul(0.022);
-
-    const inACBox = filteredPulse(cellUV.x, 0.31, 0.69, ramp.x)
-      .mul(filteredPulse(cellUV.y, effHalfY, effHalfY.add(0.22), ramp.y))
-      .mul(hasAC);
-    const acLouverHeight = fract(cellUV.y.sub(effHalfY).div(0.22).mul(6.0)).mul(0.012)
-      .mul(float(1.0).sub(smoothstep(0.012, 0.025, footprint)));
-
-    const wallHeight = brickDome.mul(float(1.0).sub(coping)).add(sillLedge).add(corniceLedge).add(coping.mul(0.024));
-    const totalHeight = mix(wallHeight, acLouverHeight.mul(inACBox), isWindow);
-
-    return bumpNormal(totalHeight.mul(detailFade));
-  })();
-
-  mat.emissiveNode = Fn(() => {
-    // The glow stays a hair inside the glazing
-    const glowHalfX = mix(float(halfWinX + 0.015), float(0.12), isGroundFloor);
-    const glowHalfY = mix(float(halfWinY + 0.015), float(0.11), isGroundFloor);
-
-    const inX = filteredPulse(cellUV.x, glowHalfX, float(1.0).sub(glowHalfX), fw.x).mul(open);
-    const inY = filteredPulse(cellUV.y, glowHalfY, float(1.0).sub(glowHalfY), fw.y);
-    const isCornice = max(
-      filteredPulse(fract(gridV.div(6.0)), 0.86, 1.0, fw.y.div(6.0)).mul(front),
-      isGroundFloor.mul(filteredPulse(cellUV.y, 0.86, 1.0, fw.y))
-    );
-
-    const sashBarY = lineAA(cellUV.y.sub(0.52), 0.014).mul(float(1.0).sub(isGroundFloor));
-    const sashBarX = lineAA(cellUV.x.sub(0.50), 0.010).mul(float(1.0).sub(isGroundFloor)).mul(0.55);
-    const storeTransom = lineAA(cellUV.y.sub(0.70), 0.016).mul(isGroundFloor);
-    const storeMullion = lineAA(fract(cellUV.x.mul(2.0)).sub(0.5), 0.020).mul(isGroundFloor);
-    const sashMask = clamp(max(max(sashBarY, sashBarX), max(storeTransom, storeMullion)), 0.0, 1.0);
-
-    const inACBox = filteredPulse(cellUV.x, 0.31, 0.69, fw.x)
-      .mul(filteredPulse(cellUV.y, glowHalfY, glowHalfY.add(0.22), fw.y))
-      .mul(hasAC);
-
-    const isWindow = inX.mul(inY)
-      .mul(float(1.0).sub(isRoof))
-      .mul(float(1.0).sub(isCornice))
-      .mul(float(1.0).sub(sashMask))
-      .mul(float(1.0).sub(inACBox));
-
-    const shopShelves = float(1.0).sub(step(0.76, fract(winUV.y.mul(3.0))).mul(0.32));
-    const vertGrad = smoothstep(0.08, 0.92, winUV.y).mul(0.62).add(0.28);
-    const shopEmit = bulbCol.mul(shopLit).mul(vertGrad).mul(shopShelves).mul(0.58);
-
-    const viewDir = normalize(cameraPosition.sub(positionWorld));
-    const fresnel = pow(clamp(float(1.0).sub(abs(dot(viewDir, normalWorldGeometry))), 0.0, 1.0), 1.8);
-    const transmission = float(1.0).sub(fresnel.mul(0.82));
-
-    const winEmit = mix(aptRoom.xyz.mul(aptRoom.w).mul(0.76), shopEmit, isGroundFloor)
-      .mul(transmission)
-      .mul(isWindow)
-      .mul(cityUniforms.uInteriorGlow);
-
-    const crownMask = smoothstep(uCrownGlowHeight, uCrownGlowHeight.add(26.0), vCoord).mul(float(1.0).sub(isRoof.mul(0.5)));
-    const crownFlood = cCrown.mul(crownMask).mul(cityUniforms.uInteriorGlow).mul(0.55);
-
-    // Lit hallway behind the entrance transom
-    const transomGlow = door.mul(filteredPulse(cellUV.x, 0.27, 0.73, fw.x)).mul(filteredPulse(cellUV.y, 0.67, 0.78, fw.y));
-    const doorEmit = cWarmWindow.mul(transomGlow).mul(cityUniforms.uInteriorGlow).mul(0.32);
-
-    return winEmit.add(crownFlood).add(doorEmit);
-  })();
-
-  _preWarCache.set(cacheKey, mat);
-  return mat;
-}
-
-/**
- * Instanced unit boxes for the facade materials' `boxLocal` mode, one per { x, y, z, w, h, d, faces?, tone?, ry? }
- * (y = centre; ry: turn about +y, for blocks laid out along a non-grid street), with the per-instance `box` attribute
- * (size + a spread seed carrying the building's tone in its fraction) that lays each wall out in whole window bays,
- * and `faces`: the WALL_KINDS of the box's -x, +x, -z & +z walls (storefront fronts all round when omitted).
- */
-function createFacadeBoxes(material, boxes) {
-  const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const box = new THREE.InstancedBufferAttribute(new Float32Array(boxes.length * 4), 4);
-  const faces = new THREE.InstancedBufferAttribute(new Float32Array(boxes.length * 4), 4);
-  geometry.setAttribute('box', box);
-  geometry.setAttribute('faces', faces);
-
-  const mesh = new THREE.InstancedMesh(geometry, material, boxes.length);
-  const matrix = new THREE.Matrix4();
-  const pos = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  const scale = new THREE.Vector3();
-  const up = new THREE.Vector3(0, 1, 0);
-  boxes.forEach((b, i) => {
-    if (b.ry) mesh.setMatrixAt(i, matrix.compose(pos.set(b.x, b.y, b.z), quat.setFromAxisAngle(up, b.ry), scale.set(b.w, b.h, b.d)));
-    else mesh.setMatrixAt(i, matrix.makeScale(b.w, b.h, b.d).setPosition(b.x, b.y, b.z));
-    box.setXYZW(i, b.w, b.h, b.d, ((i * 29) % 1000) + 0.1 + 0.8 * (b.tone ?? 0.5));
-    if (b.faces) faces.setXYZW(i, b.faces[0], b.faces[1], b.faces[2], b.faces[3]);
-  });
-  return mesh;
-}
-
-/**
- * Chrysler Building & Architectural Stainless-Steel Crown TSL Material
- */
-let _chryslerCrownMat = null;
 const _carPaintCache = new Map();
 
-function createChryslerCrownMaterial() {
-  if (_chryslerCrownMat) return _chryslerCrownMat;
-  const mat = new THREE.MeshStandardNodeMaterial({
-    metalness: 0.86,
-    roughness: 0.11
-  });
-
-  const cSteel = color(0xe4edf5);
-  const cSeam = color(0x8e9ba8);
-  const cWindowFrame = color(0x28323c);
-  const cWindowGlass = color(0x162432);
-  const cGoldGlow = color(0xffe094);
-
-  // Evaluates the 7 radiating Art Deco triangular sunburst dormer windows per crown tier face
-  const evaluateSunburstArch = Fn(() => {
-    const p = uv();
-    const isVertFace = float(1.0).sub(step(0.70, abs(normalWorldGeometry.y)));
-
-    // 7 radial bays across each tier face, following a parabolic Art Deco arch curve
-    const bayCoord = p.x.mul(7.0);
-    const bayIdx = floor(bayCoord);
-    const bayUVx = fract(bayCoord);
-    const bayCenterNorm = bayIdx.add(0.5).div(7.0).sub(0.5).mul(2.0); // -1..1 across face
-    const inInnerBays = step(abs(bayCenterNorm), 0.78); // 5 central bays per face
-
-    const archProfile = float(1.0).sub(bayCenterNorm.mul(bayCenterNorm).mul(0.72));
-    const vBase = float(0.14).add(archProfile.mul(0.10));
-    const vApex = vBase.add(archProfile.mul(0.56));
-    const tY = clamp(p.y.sub(vBase).div(max(0.04, vApex.sub(vBase))), 0.0, 1.0);
-
-    // Triangular window tapering to a sharp apex at tY = 1.0
-    const halfTriOuter = float(0.36).mul(float(1.0).sub(tY));
-    const halfTriInner = float(0.28).mul(float(1.0).sub(tY.mul(1.06)));
-    const distFromCenter = abs(bayUVx.sub(0.5));
-
-    const inYOuter = step(vBase, p.y).mul(step(p.y, vApex));
-    const inYInner = step(vBase.add(0.035), p.y).mul(step(p.y, vApex.sub(0.035)));
-
-    const outerTri = step(distFromCenter, halfTriOuter).mul(inYOuter).mul(inInnerBays).mul(isVertFace);
-    const innerGlass = step(distFromCenter, max(0.0, halfTriInner)).mul(inYInner).mul(inInnerBays).mul(isVertFace);
-
-    // Radiating stainless-steel standing seams across the arch
-    const radialSeam = lineAA(fract(p.x.mul(14.0)).sub(0.5), 0.045).mul(isVertFace);
-    return vec3(outerTri, innerGlass, radialSeam);
-  });
-
-  mat.colorNode = Fn(() => {
-    const mask = evaluateSunburstArch();
-    const outerTri = mask.x;
-    const innerGlass = mask.y;
-    const radialSeam = mask.z;
-
-    const viewDir = normalize(cameraPosition.sub(positionWorld));
-    const fresnel = pow(clamp(float(1.0).sub(abs(dot(viewDir, normalWorld))), 0.0, 1.0), 1.6);
-    const skyReflect = mix(cityUniforms.uSkyHorizonColor, color(0xffffff), 0.60);
-    const steelSurface = mix(mix(cSteel, cSeam, radialSeam.mul(0.55)), skyReflect, fresnel.mul(0.68));
-
-    const glowAmt = clamp(cityUniforms.uInteriorGlow.mul(0.85).add(0.28), 0.28, 1.0);
-    const glassCol = mix(cWindowGlass, cGoldGlow, glowAmt.mul(0.78));
-    const withFrame = mix(steelSurface, cWindowFrame, outerTri);
-    return mix(withFrame, glassCol, innerGlass);
-  })();
-
-  mat.roughnessNode = Fn(() => {
-    const mask = evaluateSunburstArch();
-    return mix(float(0.10).add(mask.z.mul(0.18)), float(0.05), mask.y);
-  })();
-
-  mat.metalnessNode = Fn(() => {
-    const mask = evaluateSunburstArch();
-    return mix(float(0.88), float(0.15), mask.x);
-  })();
-
-  mat.emissiveNode = Fn(() => {
-    const mask = evaluateSunburstArch();
-    const innerGlass = mask.y;
-    const outerTri = mask.x;
-    const glowFactor = max(float(0.42), cityUniforms.uInteriorGlow);
-    return cGoldGlow.mul(innerGlass.mul(1.85).add(outerTri.mul(0.18)).add(0.08)).mul(glowFactor);
-  })();
-
-  _chryslerCrownMat = mat;
-  return mat;
-}
 
 /**
  * GTA 6-Style Metallic Clearcoat Vehicle Paint TSL Material
@@ -1238,7 +730,7 @@ class TreeNodeMaterial extends THREE.MeshStandardNodeMaterial {
   }
 }
 
-// Prevailing wind (xz, blowing from the west-north-west across Manhattan)
+// Prevailing wind (xz, from the west-north-west)
 const TREE_WIND = vec2(0.86, 0.51);
 
 /**
@@ -1547,33 +1039,6 @@ function createTunnelShadeMaterial() {
   return mat;
 }
 
-/**
- * Duffy Square TKTS red glass bleacher steps: glossy ruby glass treads with bright LED-lit riser nosings and a
- * gentle inner glow by day that becomes a strong red beacon at dusk & night. Risers are `riserH` tall from `baseY`.
- */
-function createTktsStepMaterial(baseY = 0.24, riserH = 0.18) {
-  const mat = new THREE.MeshStandardNodeMaterial({
-    color: 0xb3122a,
-    roughness: 0.14,
-    metalness: 0.08
-  });
-  const stepFract = () => fract(positionWorld.y.sub(baseY).div(riserH));
-  mat.colorNode = Fn(() => {
-    const n = normalWorldGeometry;
-    const riser = abs(n.z).mul(float(1.0).sub(abs(n.y)));
-    const scuff = noise2D(positionWorld.xz.mul(1.7)).mul(0.12);
-    return mix(color(0xa30f24), color(0xd4182e), riser.mul(0.6)).mul(float(0.94).sub(scuff));
-  })();
-  mat.emissiveNode = Fn(() => {
-    const n = normalWorldGeometry;
-    const night = smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow);
-    const riser = abs(n.z).mul(float(1.0).sub(abs(n.y)));
-    const nosing = smoothstep(0.82, 0.97, stepFract()).mul(riser);
-    const glow = mix(float(0.16), float(1.35), night);
-    return color(0xff1430).mul(glow.mul(riser.mul(0.55).add(0.45))).add(color(0xff5a66).mul(nosing.mul(mix(0.3, 2.2, night))));
-  })();
-  return mat;
-}
 
 /**
  * Weathered Tuckahoe Marble Ashlar TSL Material for park monuments (Washington Square Arch): coursed blocks with
@@ -1647,7 +1112,7 @@ function roadWetMasks(field, drainage = 0.0) {
 }
 
 /**
- * Unified Manhattan Roadway Asphalt, Footprint-Filtered Aggregate `bumpNormal`, Scattered Manholes
+ * Roadway asphalt, footprint-filtered aggregate `bumpNormal`, scattered manholes
  * & Post-Rain Wetness (upgraded with techniques from CityGenerator.js `createRoadMaterial`).
  * cityUniforms.uRoadWetness drives damp stains, a glossy wet film & standing puddles (roadWetMasks): bone dry at
  * midday, a few small pools at golden hour, slick & mirroring the lights at night. Water's Fresnel rides on metalness
@@ -1918,358 +1383,6 @@ function createCurbMaterial() {
   return mat;
 }
 
-/**
- * High-Definition Times Square / Broadway LED Video Wall TSL Material
- * Features 6 crisp, non-pixelated HDR shader themes with fine sub-pixel LED scanlines.
- */
-const _billboardCache = new Map();
-
-function createBillboardCanvasTexture(themeKey) {
-  const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 256;
-  const ctx = c.getContext('2d');
-
-  if (themeKey === 0) {
-    // Theme 0: Broadway Musical Marquee ("PHANTOM OF MANHATTAN · MAJESTIC THEATRE")
-    const grad = ctx.createLinearGradient(0, 0, 512, 256);
-    grad.addColorStop(0, '#2a0412');
-    grad.addColorStop(0.5, '#580a22');
-    grad.addColorStop(1, '#1c030c');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 512, 256);
-
-    // Golden Art Deco border & chaser bulb frame
-    ctx.strokeStyle = '#ffcf58';
-    ctx.lineWidth = 6;
-    ctx.strokeRect(10, 10, 492, 236);
-    ctx.strokeStyle = '#ff9824';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(18, 18, 476, 220);
-
-    // Stage spotlight halo
-    const rad = ctx.createRadialGradient(256, 118, 12, 256, 118, 185);
-    rad.addColorStop(0, 'rgba(255, 214, 102, 0.55)');
-    rad.addColorStop(1, 'rgba(40, 4, 18, 0.0)');
-    ctx.fillStyle = rad;
-    ctx.fillRect(18, 18, 476, 220);
-
-    ctx.fillStyle = '#ffdf78';
-    ctx.font = '800 18px Inter, Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('★  BROADWAY MUSICAL SPECTACULAR  ★', 256, 46);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 44px Inter, Arial, sans-serif';
-    ctx.fillText('METROPOLIS', 256, 102);
-
-    ctx.fillStyle = '#ffc845';
-    ctx.font = '900 26px Inter, Arial, sans-serif';
-    ctx.fillText('LIVE ON BROADWAY', 256, 138);
-
-    ctx.fillStyle = '#18040a';
-    ctx.fillRect(36, 158, 440, 42);
-    ctx.strokeStyle = '#ffcf58';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(36, 158, 440, 42);
-
-    ctx.fillStyle = '#fff3c4';
-    ctx.font = '800 20px Inter, Arial, sans-serif';
-    ctx.fillText('★★★★★  "UNFORGETTABLE!" — NY TIMES', 256, 185);
-
-    ctx.fillStyle = '#ffae42';
-    ctx.font = '700 16px JetBrains Mono, monospace';
-    ctx.fillText('MAJESTIC THEATRE · 44TH ST WEST · TONIGHT 8 PM', 256, 226);
-  } else if (themeKey === 1) {
-    // Theme 1: NASDAQ / Wall St MarketSite Financial Display
-    const grad = ctx.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, '#04122c');
-    grad.addColorStop(1, '#08264e');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 512, 256);
-
-    // Financial terminal grid lines
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
-    ctx.lineWidth = 1;
-    for (let x = 32; x < 512; x += 32) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 256); ctx.stroke();
-    }
-    for (let y = 32; y < 256; y += 32) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
-    }
-
-    // Header bar
-    ctx.fillStyle = '#0052cc';
-    ctx.fillRect(0, 0, 512, 46);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 24px Inter, Arial, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('NASDAQ · TIMES SQ MARKETSITE', 18, 31);
-    ctx.fillStyle = '#00f5a0';
-    ctx.textAlign = 'right';
-    ctx.font = '800 20px JetBrains Mono, monospace';
-    ctx.fillText('LIVE ▲ +2.84%', 494, 31);
-
-    // Bullish emerald chart area & line
-    const pts = [
-      [24, 182], [75, 168], [125, 174], [175, 142], [225, 148],
-      [280, 116], [335, 124], [390, 92], [445, 78], [492, 64]
-    ];
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], 200);
-    for (const [px, py] of pts) ctx.lineTo(px, py);
-    ctx.lineTo(pts[pts.length - 1][0], 200);
-    ctx.closePath();
-    const areaGrad = ctx.createLinearGradient(0, 60, 0, 200);
-    areaGrad.addColorStop(0, 'rgba(0, 245, 160, 0.50)');
-    areaGrad.addColorStop(1, 'rgba(0, 245, 160, 0.02)');
-    ctx.fillStyle = areaGrad;
-    ctx.fill();
-
-    ctx.beginPath();
-    for (let i = 0; i < pts.length; i++) {
-      if (i === 0) ctx.moveTo(pts[i][0], pts[i][1]);
-      else ctx.lineTo(pts[i][0], pts[i][1]);
-    }
-    ctx.strokeStyle = '#00f5a0';
-    ctx.lineWidth = 5;
-    ctx.stroke();
-
-    // Bottom stock ticker ribbon
-    ctx.fillStyle = '#030b1a';
-    ctx.fillRect(0, 206, 512, 50);
-    ctx.fillStyle = '#38d8ff';
-    ctx.font = '800 20px JetBrains Mono, monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('NDX 21,490 ▲   SPX 6,145 ▲   DOW 44,880 ▲   NYC 100 ▲', 256, 238);
-  } else if (themeKey === 2) {
-    // Theme 2: Gotham Cola / Iconic Red & White Wave Billboard
-    const grad = ctx.createLinearGradient(0, 0, 512, 256);
-    grad.addColorStop(0, '#b8061e');
-    grad.addColorStop(0.5, '#e6122e');
-    grad.addColorStop(1, '#9e0418');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 512, 256);
-
-    // Classic dynamic white wave ribbon
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.moveTo(0, 170);
-    ctx.bezierCurveTo(160, 110, 340, 225, 512, 148);
-    ctx.lineTo(512, 192);
-    ctx.bezierCurveTo(340, 260, 160, 150, 0, 210);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#ffe082';
-    ctx.font = '800 18px Inter, Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('ICE COLD · EST. 1898 · NEW YORK', 256, 48);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'italic 900 54px Georgia, serif';
-    ctx.fillText('Gotham Cola', 256, 108);
-
-    ctx.fillStyle = '#fff5cc';
-    ctx.font = '800 22px Inter, Arial, sans-serif';
-    ctx.fillText('TASTE THE MANHATTAN SKYLINE', 256, 148);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '700 17px JetBrains Mono, monospace';
-    ctx.fillText('REFRESHING TIMES SQUARE 24 HOURS A DAY', 256, 236);
-  } else if (themeKey === 3) {
-    // Theme 3: Fifth Avenue Luxury Watch & Couture ("CHRONO GENÈVE")
-    const grad = ctx.createRadialGradient(256, 128, 16, 256, 128, 260);
-    grad.addColorStop(0, '#2c2218');
-    grad.addColorStop(1, '#0c0908');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 512, 256);
-
-    ctx.strokeStyle = '#d4af37';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(12, 12, 488, 232);
-
-    // Watch dial on left
-    const cx = 118;
-    const cy = 128;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 74, 0, Math.PI * 2);
-    ctx.fillStyle = '#14110e';
-    ctx.fill();
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = '#e5c158';
-    ctx.stroke();
-
-    // Hour tick marks & hands
-    for (let h = 0; h < 12; h++) {
-      const a = (h * Math.PI) / 6;
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(a) * 58, cy + Math.sin(a) * 58);
-      ctx.lineTo(cx + Math.cos(a) * 67, cy + Math.sin(a) * 67);
-      ctx.strokeStyle = '#f5d97e';
-      ctx.lineWidth = h % 3 === 0 ? 4 : 2;
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx - 26, cy - 34);
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + 44, cy - 22);
-    ctx.strokeStyle = '#ffe89e';
-    ctx.lineWidth = 4;
-    ctx.stroke();
-
-    // Luxury typography on right
-    ctx.fillStyle = '#f5d97e';
-    ctx.textAlign = 'center';
-    ctx.font = '800 16px Inter, Arial, sans-serif';
-    ctx.fillText('SWISS MANUFACTURE · SINCE 1884', 345, 66);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 38px Georgia, serif';
-    ctx.fillText('CHRONO GENÈVE', 345, 114);
-
-    ctx.fillStyle = '#e5c158';
-    ctx.font = '700 22px Inter, Arial, sans-serif';
-    ctx.fillText('FIFTH AVENUE FLAGSHIP', 345, 154);
-
-    ctx.fillStyle = '#c8b89a';
-    ctx.font = '600 16px JetBrains Mono, monospace';
-    ctx.fillText('5TH AVE AT 57TH ST · NEW YORK', 345, 202);
-  } else if (themeKey === 4) {
-    // Theme 4: NY1 Live Skyline News & Weather Broadcast
-    const grad = ctx.createLinearGradient(0, 0, 512, 200);
-    grad.addColorStop(0, '#0a2246');
-    grad.addColorStop(1, '#1c569e');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 512, 256);
-
-    // Top live header
-    ctx.fillStyle = '#07162e';
-    ctx.fillRect(0, 0, 512, 48);
-    ctx.fillStyle = '#38b6ff';
-    ctx.font = '900 26px Inter, Arial, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('NY1 NEWS · LIVE MANHATTAN', 18, 33);
-
-    ctx.fillStyle = '#ffd15c';
-    ctx.textAlign = 'right';
-    ctx.font = '800 22px JetBrains Mono, monospace';
-    ctx.fillText('NYC 72°F ☀', 492, 33);
-
-    // Center headline graphic
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.font = '900 36px Inter, Arial, sans-serif';
-    ctx.fillText('MIDTOWN SKYLINE REPORT', 256, 104);
-    ctx.fillStyle = '#a8dcff';
-    ctx.font = '700 20px Inter, Arial, sans-serif';
-    ctx.fillText('CLEAR SKIES FROM HARLEM TO BATTERY PARK', 256, 138);
-
-    // Red BREAKING NEWS badge
-    ctx.fillStyle = '#e6192e';
-    ctx.fillRect(20, 154, 178, 34);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 19px Inter, Arial, sans-serif';
-    ctx.fillText('BREAKING NEWS', 109, 177);
-
-    // White Broadcast Lower-Third Chyron
-    ctx.fillStyle = '#f4f7fb';
-    ctx.fillRect(0, 188, 512, 68);
-    ctx.fillStyle = '#0a192f';
-    ctx.font = '900 24px Inter, Arial, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('EXPRESS: 5TH AVE & BROADWAY CLEAR', 20, 220);
-    ctx.fillStyle = '#c8102e';
-    ctx.font = '800 16px JetBrains Mono, monospace';
-    ctx.fillText('LIVE HD · EMPIRE STATE · CHRYSLER · ONE WTC · CENTRAL PARK', 20, 244);
-  } else {
-    // Theme 5: Times Square Neon Nights & TKTS Booth
-    const grad = ctx.createLinearGradient(0, 0, 512, 256);
-    grad.addColorStop(0, '#1e0638');
-    grad.addColorStop(0.5, '#6a0dad');
-    grad.addColorStop(1, '#d81b60');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 512, 256);
-
-    // Glowing neon sun disc
-    ctx.beginPath();
-    ctx.arc(256, 118, 72, 0, Math.PI * 2);
-    const sunGrad = ctx.createLinearGradient(256, 46, 256, 190);
-    sunGrad.addColorStop(0, '#fff176');
-    sunGrad.addColorStop(1, '#ff6f00');
-    ctx.fillStyle = sunGrad;
-    ctx.fill();
-
-    // Stylized dark skyline silhouette across the neon sun
-    ctx.fillStyle = '#160428';
-    const bars = [
-      [30, 60], [65, 85], [95, 55], [130, 110], [168, 75], [202, 138],
-      [242, 156], [282, 125], [320, 88], [358, 118], [398, 70], [435, 95], [470, 65]
-    ];
-    for (const [bx, bh] of bars) {
-      ctx.fillRect(bx, 198 - bh, 28, bh);
-    }
-
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.font = '900 42px Inter, Arial, sans-serif';
-    ctx.fillText('TIMES SQUARE NYC', 256, 62);
-
-    ctx.fillStyle = '#ffea70';
-    ctx.font = '800 22px Inter, Arial, sans-serif';
-    ctx.fillText('THE CROSSROADS OF THE WORLD', 256, 94);
-
-    ctx.fillStyle = '#120322';
-    ctx.fillRect(0, 198, 512, 58);
-    ctx.fillStyle = '#ff4081';
-    ctx.font = '900 24px JetBrains Mono, monospace';
-    ctx.fillText('TKTS · 50% OFF BROADWAY SHOWS TONIGHT', 256, 234);
-  }
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-function createBillboardMaterial(themeIndex = 0) {
-  const key = ((themeIndex % 6) + 6) % 6;
-  if (_billboardCache.has(key)) return _billboardCache.get(key);
-
-  const mat = new THREE.MeshBasicNodeMaterial();
-  const canvasTex = createBillboardCanvasTexture(key);
-
-  mat.colorNode = Fn(() => {
-    const p = uv();
-    const t = time;
-
-    const basePoster = texture(canvasTex, p).xyz;
-
-    // Fine RGB LED matrix pitch & cabinet bezel border
-    const ledScanX = sin(p.x.mul(360.0)).mul(0.035).add(0.965);
-    const ledScanY = sin(p.y.mul(200.0)).mul(0.045).add(0.955);
-    const borderMask = smoothstep(0.0, 0.018, p.x)
-      .mul(smoothstep(0.0, 0.018, p.y))
-      .mul(float(1.0).sub(smoothstep(0.982, 1.0, p.x)))
-      .mul(float(1.0).sub(smoothstep(0.982, 1.0, p.y)));
-
-    // Animated stage spotlight sweep & scrolling LED ticker pulse
-    const sweepPos = sin(t.mul(1.15 + key * 0.18)).mul(0.38).add(0.5);
-    const spotlightSweep = pow(clamp(float(1.0).sub(abs(p.x.sub(sweepPos)).mul(2.4)), 0.0, 1.0), 3.0).mul(0.28);
-    const tickerBand = float(1.0).sub(step(0.20, p.y));
-    const tickerPulse = smoothstep(0.2, 0.8, sin(p.x.mul(42.0).add(t.mul(5.2)))).mul(tickerBand).mul(0.22);
-
-    const animatedCol = basePoster
-      .mul(float(1.18).add(spotlightSweep))
-      .add(basePoster.mul(tickerPulse));
-
-    return animatedCol.mul(ledScanX).mul(ledScanY).mul(borderMask);
-  })();
-
-  _billboardCache.set(key, mat);
-  return mat;
-}
 
 /**
  * Tileable wind-wave texture shared by every water surface, synthesised once on the CPU: a random-phase directional
@@ -2436,7 +1549,7 @@ const waterBoxCover = Fn(([x, a, b, s]) => {
 });
 
 /**
- * Hudson River, East River, Upper Bay & Central Park Lakes: Physically Based Estuary Water TSL Material
+ * Victoria Harbour water: physically based estuary material
  * - Wave normals (normalNode) from 4 rotated, scaled & drifting samples of the LEAN wave texture whose energy follows
  *   slowly drifting wind patches; the slope variance below each pixel footprint (plus always-unresolved capillary
  *   ripples) becomes GGX roughness, so crisp chop near the piers turns into a soft glitter path towards the horizon
@@ -2445,7 +1558,7 @@ const waterBoxCover = Fn(([x, a, b, s]) => {
  *   (F0 = 0.02): it hands the transmitted share to the body colour and weights the pipeline's SSR, so reflections come
  *   only from the sky IBL, the sun's GGX specular and SSR (no painted-in glint).
  * - Night: the lit skyline & far shores sit beyond SSR's reach, so an analytic city (lots, lit windows, storefronts &
- *   riverside lamps on Manhattan's shoreline, the NJ / Queens / Brooklyn waterfronts & Central Park's rim) is reflected
+ *   riverside lamps along the Island and Kowloon shores) is reflected
  *   through the same wave normals & Fresnel, blurred by the unresolved slopes into the familiar vertical light streaks.
  * - Park lakes, the Reservoir & fountains (well above the harbour) get finer, calmer ripples and a greener, duller body.
  */
@@ -2522,16 +1635,13 @@ function createWaterMaterial() {
   })();
 
   // Physical water only. Island + Kowloon + Victoria Harbour is the water plane (PLAY_BOUNDS).
-  // No Midtown, New Jersey, or Brooklyn skyline is reflected.
   mat.emissiveNode = color(0x000000);
-  const REFLECT_NYC_SKYLINE = false;
-  void REFLECT_NYC_SKYLINE;
 
   return mat;
 }
 
 /**
- * Central Park & Manhattan Park Lush Multi-Octave Turf, Clover & Mowing Stripes TSL Material
+ * Park turf: multi-octave grass, clover, and mowing stripes
  */
 function createParkLawnMaterial(isMeadow = false) {
   const mat = new THREE.MeshStandardNodeMaterial({
@@ -2689,123 +1799,13 @@ function getSmokeCloudTexture() {
 }
 
 /**
- * ConEd Iconic Street Steam Stack Volumetric Billowing SpriteNodeMaterial
- * Modelled after `three.js/examples/webgpu_particles.html`:
- * - Uses `THREE.SpriteNodeMaterial` on an instanced `PlaneGeometry(1, 1)` so every puff is a
- *   camera-facing billboard sprite with zero polygonal facets.
- * - Continuously rises from the orange-and-white ConEd stack nozzle (`life = fract(phase + time * speed)`),
- *   expands (`scaleNode`), curls downwind (`positionNode`), and rotates (`rotateUV`) with soft
- *   sunlit top rims and cool urban-canyon self-shadowing.
+ * Transparent decals keep a zero normal and roughness sample so they do not overwrite the road G-buffer.
  */
-// Transparent decal/effect planes & sprites preserve the underlying road/scene G-buffer in MRT (zero RGB & zero alpha on normal & metalRough)
 const _transparentEffectMRT = mrt({
   normal: vec4(0.0, 0.0, 0.0, 0.0),
   metalRough: vec4(0.0, 0.0, 0.0, 0.0)
 });
 
-function createSteamMaterial() {
-  const smokeMap = getSmokeCloudTexture();
-
-  const mat = new THREE.SpriteNodeMaterial({
-    transparent: true,
-    depthWrite: false
-  });
-  mat.mrtNode = _transparentEffectMRT;
-
-  const aOrigin = attribute('aSmokeOrigin', 'vec3');
-  const aWind = attribute('aSmokeWind', 'vec3');
-  const aParams = attribute('aSmokeParams', 'vec4'); // x: phaseOffset, y: spinSpeed, z: curlSeed, w: scaleMul
-
-  const life = fract(aParams.x.add(time.mul(0.16)));
-
-  // World position of each rising, wind-drifted, turbulent steam sprite
-  mat.positionNode = Fn(() => {
-    const l = life.toVar();
-    const lift = pow(l, 0.78).mul(aWind.y);
-    const drift = pow(l, 1.68).mul(4.6);
-    const curlAng = l.mul(5.4).add(aParams.z).add(time.mul(0.85));
-    const curlAmp = pow(l, 1.15).mul(0.68);
-
-    const px = aOrigin.x.add(aWind.x.mul(drift)).sub(aWind.z.mul(sin(curlAng)).mul(curlAmp));
-    const py = aOrigin.y.add(lift).add(cos(curlAng.mul(1.3)).mul(l).mul(0.25));
-    const pz = aOrigin.z.add(aWind.z.mul(drift)).add(aWind.x.mul(cos(curlAng)).mul(curlAmp));
-    return vec3(px, py, pz);
-  })();
-
-  // Billboard sprite scale: tight jet at stack mouth (~0.88m), billowing wide (~4.3m) as it rises
-  mat.scaleNode = Fn(() => {
-    const l = life.toVar();
-    const s = mix(float(0.88), float(4.35), pow(l, 0.72)).mul(aParams.w);
-    return vec2(s, s);
-  })();
-
-  const rotAngle = aParams.z.add(time.mul(aParams.y));
-  const texNode = texture(smokeMap, rotateUV(uv(), rotAngle));
-
-  mat.colorNode = Fn(() => {
-    const l = life.toVar();
-    const tSample = texNode;
-    const billowLight = tSample.r;
-    const hemiLight = tSample.g;
-
-    const cShadowVapor = mix(color(0x8e9baa), cityUniforms.uSkyTopColor, 0.22);
-    const cMidVapor = mix(color(0xdbe2ea), cityUniforms.uSkyHorizonColor, 0.18);
-    const cLitVapor = mix(color(0xffffff), cityUniforms.uSunColor, 0.22);
-
-    // Pressurized wet steam near the stack mouth is bright white; upper plume picks up warm sun & sky shadow
-    const nozzleWhiteness = smoothstep(0.32, 0.0, l).mul(0.32);
-    const shadeFactor = clamp(
-      hemiLight.mul(0.52).add(billowLight.mul(0.48)).add(nozzleWhiteness),
-      0.0,
-      1.0
-    );
-    const baseVapor = mix(cShadowVapor, cMidVapor, smoothstep(0.0, 0.55, shadeFactor));
-    return mix(baseVapor, cLitVapor, smoothstep(0.42, 0.96, shadeFactor));
-  })();
-
-  mat.opacityNode = Fn(() => {
-    const l = life.toVar();
-    const alphaTex = texNode.a;
-    // Smooth fade-in emerging from the stack nozzle and soft dissipation fade-out at top of plume
-    const fadeIn = smoothstep(0.0, 0.08, l);
-    const fadeOut = pow(clamp(float(1.0).sub(l), 0.0, 1.0), 1.45);
-    const nozzleCore = smoothstep(0.30, 0.02, l).mul(0.22).add(1.0);
-    return clamp(alphaTex.mul(fadeIn).mul(fadeOut).mul(nozzleCore).mul(0.44), 0.0, 0.72);
-  })();
-
-  return mat;
-}
-
-/**
- * Volumetric Canyon Sun Shafts (God Rays) Streaming Through Midtown Cross-Streets
- */
-function createGodRayMaterial() {
-  const mat = new THREE.MeshBasicNodeMaterial({
-    transparent: true,
-    depthWrite: false,
-    fog: false,
-    side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending
-  });
-  mat.mrtNode = _transparentEffectMRT;
-
-  mat.colorNode = Fn(() => {
-    return mix(cityUniforms.uSunColor, cityUniforms.uSkyHorizonColor, 0.35);
-  })();
-
-  mat.opacityNode = Fn(() => {
-    const p = uv();
-    const radialDist = length(p.sub(vec2(0.5, 0.5)).mul(2.0));
-    const radialMask = smoothstep(0.96, 0.18, radialDist);
-    const rays = noise2D(vec2(p.x.mul(7.5).add(time.mul(0.06)), p.y.mul(1.8))).mul(0.45).add(0.55);
-    const viewDir = normalize(cameraPosition.sub(positionWorld));
-    const angleFade = smoothstep(0.15, 0.65, abs(dot(viewDir, normalWorld)));
-    const sunActive = clamp(float(1.45).sub(cityUniforms.uInteriorGlow.mul(0.95)), 0.08, 1.0);
-    return radialMask.mul(rays).mul(angleFade).mul(sunActive).mul(0.065);
-  })();
-
-  return mat;
-}
 
 /**
  * Soft Rounded-Rectangle Under-Vehicle Contact Shadow (Ambient Occlusion) TSL Material
@@ -2873,9 +1873,6 @@ export {
   cityUniforms,
   WALL_KINDS,
   createCurtainWallMaterial,
-  createPreWarBuildingMaterial,
-  createFacadeBoxes,
-  createChryslerCrownMaterial,
   createCarPaintMaterial,
   createTreeMaterial,
   createParkPavingMaterial,
@@ -2884,18 +1881,14 @@ export {
   createParkLampGlobeMaterial,
   createParkLampPoolMaterial,
   createTunnelShadeMaterial,
-  createTktsStepMaterial,
   createMarbleAshlarMaterial,
   createTreeGrateMaterial,
   createRoadSurfaceMaterial,
   createRoadPaintMaterial,
   createSidewalkMaterial,
   createCurbMaterial,
-  createBillboardMaterial,
   createWaterMaterial,
   createParkLawnMaterial,
-  createSteamMaterial,
-  createGodRayMaterial,
   createContactShadowMaterial,
   createCarFlareMaterial
 };
