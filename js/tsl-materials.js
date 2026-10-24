@@ -1266,6 +1266,31 @@ function createRoadPaintMaterial() {
   return mat;
 }
 
+// Painted lane, stop, and keep-clear strips. Same wetness field as the asphalt so rain darkens them.
+function createLaneStripeMaterial(hex) {
+  const mat = new THREE.MeshStandardNodeMaterial({
+    roughness: 0.45,
+    metalness: 0.06,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3
+  });
+  const tint = color(hex);
+  mat.colorNode = Fn(() => {
+    const wet = roadWetMasks(roadPuddleField(positionWorld.x, positionWorld.z));
+    return tint.mul(mix(float(1.0), float(0.7), max(wet.y, wet.z.mul(0.8))));
+  })();
+  mat.roughnessNode = Fn(() => {
+    const wet = roadWetMasks(roadPuddleField(positionWorld.x, positionWorld.z));
+    return mix(float(0.46), float(0.2), max(wet.z, wet.y));
+  })();
+  mat.metalnessNode = Fn(() => {
+    const wet = roadWetMasks(roadPuddleField(positionWorld.x, positionWorld.z));
+    return clamp(wet.y.mul(0.55).add(wet.z.mul(0.2)), 0.0, 0.65);
+  })();
+  return mat;
+}
+
 /**
  * NYC Concrete Sidewalk Flagstones with Filter-Width Anti-Aliased 1.5m Scored Expansion Joints,
  * -12mm `bumpNormal` Groove Relief, Per-Flag Tone Variation & Post-Rain Damp Patches
@@ -1885,6 +1910,7 @@ export {
   createTreeGrateMaterial,
   createRoadSurfaceMaterial,
   createRoadPaintMaterial,
+  createLaneStripeMaterial,
   createSidewalkMaterial,
   createCurbMaterial,
   createWaterMaterial,

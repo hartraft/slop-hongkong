@@ -6,16 +6,20 @@ import {
   HONG_KONG_ISLAND_COASTLINE,
   KOWLOON_COASTLINE,
   BLOCKS,
-  ROADS
+  ROADS,
+  HK_CORE_WORLD
 } from './city-config.js';
 import {
+  createCurbMaterial,
+  createLaneStripeMaterial,
   createRoadSurfaceMaterial,
   createSidewalkMaterial,
   createWaterMaterial
 } from './tsl-materials.js';
 import { GEO } from './geo-source.js';
+import { planHkRoadDeck } from './hk-road-deck.js';
 
-// Hong Kong coast, Victoria Harbour, and centreline ribbons. Lots stay in buildings.js.
+// Hong Kong coast, Victoria Harbour, and the centreline asphalt deck. Lots stay in buildings.js.
 
 /**
  * Merges static non-instanced THREE.Mesh objects sharing the same material into a single
@@ -100,7 +104,7 @@ function createExtrudedPolygonMesh(pts, bottomY, height, material, receiveShadow
   return mesh;
 }
 
-function addHkRibbonMesh(group, mat, segs, y, height, name) {
+function addHkRibbonMesh(group, mat, segs, y, height, name, renderOrder = 0) {
   if (!segs.length) return null;
   const geo = new THREE.BoxGeometry(1, 1, 1);
   geo.translate(0, 0.5, 0);
@@ -108,6 +112,7 @@ function addHkRibbonMesh(group, mat, segs, y, height, name) {
   mesh.name = name;
   mesh.receiveShadow = true;
   mesh.castShadow = false;
+  mesh.renderOrder = renderOrder;
   const dummy = new THREE.Object3D();
   for (let i = 0; i < segs.length; i++) {
     const s = segs[i];
@@ -123,47 +128,37 @@ function addHkRibbonMesh(group, mat, segs, y, height, name) {
   return mesh;
 }
 
-// Asphalt and sidewalks from the Hong Kong centreline only. GEO.roads is the merged
-// LandsD + OSM carriageway. GEO.roadGraph is that same at-grade graph for traffic
-// (road-network.js). Drawing the graph on top of the merged lines would stack two decks.
+// Asphalt deck on the LandsD / OSM centreline. Central gets curbs and paint.
+// GEO.roadGraph stays the traffic graph; drawing it again would stack a second deck.
 function buildHkRoadRibbons(group, roadMat, sidewalkMat) {
-  const sw = (GEO.frame && GEO.frame.sidewalk) || 4.6;
-  const asphaltMat = roadMat || new THREE.MeshStandardNodeMaterial({ color: 0x2c3136, roughness: 0.92, metalness: 0.02 });
+  const asphaltMat = roadMat || new THREE.MeshStandardNodeMaterial({ color: 0x2c3136, roughness: 0.55, metalness: 0.08 });
   asphaltMat.name = 'hkRoadCentreline';
-  const roads = [];
-  const walks = [];
-  for (const road of ROADS) {
-    const width = Math.max(4.5, road.w || 8);
-    const pts = road.pts || [];
-    for (let i = 0; i + 1 < pts.length; i++) {
-      const a = pts[i];
-      const b = pts[i + 1];
-      const dx = b.x - a.x;
-      const dz = b.z - a.z;
-      const len = Math.hypot(dx, dz);
-      if (len < 0.4) continue;
-      const yaw = Math.atan2(dx, dz);
-      const mx = (a.x + b.x) * 0.5;
-      const mz = (a.z + b.z) * 0.5;
-      const rx = -dz / len;
-      const rz = dx / len;
-      roads.push({
-        x: mx,
-        z: mz,
-        w: width,
-        len: len + Math.min(width * 0.28, 4),
-        yaw
-      });
-      const side = width * 0.5 + sw * 0.45;
-      const slab = len + Math.min(sw, 2.5);
-      walks.push({ x: mx + rx * side, z: mz + rz * side, w: sw * 0.9, len: slab, yaw });
-      walks.push({ x: mx - rx * side, z: mz - rz * side, w: sw * 0.9, len: slab, yaw });
-    }
+  asphaltMat.polygonOffset = true;
+  asphaltMat.polygonOffsetFactor = -1;
+  asphaltMat.polygonOffsetUnits = -1;
+  const curbMat = createCurbMaterial();
+  curbMat.name = 'hkRoadCurb';
+  const whiteMat = createLaneStripeMaterial(0xf3f0e6);
+  whiteMat.name = 'hkLaneWhite';
+  const yellowMat = createLaneStripeMaterial(0xe6b01e);
+  yellowMat.name = 'hkLaneYellow';
+  const deck = planHkRoadDeck(ROADS, HK_CORE_WORLD);
+  const white = [];
+  const yellow = [];
+  for (const mark of deck.markings) {
+    if (mark.color === 'yellow') yellow.push(mark);
+    else white.push(mark);
   }
-  addHkRibbonMesh(group, asphaltMat, roads, 0.02, 0.04, 'HkRoadCentrelines');
-  if (sidewalkMat) addHkRibbonMesh(group, sidewalkMat, walks, 0.012, 0.1, 'HkSidewalks');
+  addHkRibbonMesh(group, asphaltMat, deck.asphalt, 0.02, 0.055, 'HkRoadCentrelines', 1);
+  if (sidewalkMat) addHkRibbonMesh(group, sidewalkMat, deck.sidewalks, 0.02, 0.2, 'HkSidewalks', 1);
+  addHkRibbonMesh(group, curbMat, deck.curbs, 0.02, 0.15, 'HkCurbs', 2);
+  addHkRibbonMesh(group, whiteMat, white, 0.08, 0.018, 'HkLaneMarkingsWhite', 3);
+  addHkRibbonMesh(group, yellowMat, yellow, 0.082, 0.018, 'HkLaneMarkingsYellow', 3);
   const graphLinks = GEO.roadGraph && GEO.roadGraph.links ? GEO.roadGraph.links.length : 0;
-  console.info(`[roads] HK centreline ribbons ${roads.length} sidewalks ${walks.length} roadGraph links ${graphLinks}`);
+  console.info(
+    `[roads] HK asphalt ${deck.asphalt.length} sidewalks ${deck.sidewalks.length} ` +
+    `curbs ${deck.curbs.length} markings ${deck.markings.length} roadGraph links ${graphLinks}`
+  );
 }
 
 function buildHkPierDecks(group) {
@@ -204,7 +199,7 @@ function buildCityGrid(scene) {
   return buildHkCityGrid(scene);
 }
 
-// Coast rings become land. Carriageways and sidewalks are ribbons on GEO.roads.
+// Coast rings become land. Carriageways are an asphalt deck on GEO.roads.
 // Victoria Harbour water uses PLAY_BOUNDS (Island + Kowloon + harbour).
 function buildHkCityGrid(scene) {
   const group = new THREE.Group();
@@ -232,6 +227,9 @@ function buildHkCityGrid(scene) {
     side: THREE.DoubleSide
   });
   landMat.name = 'hkCoastLand';
+  landMat.polygonOffset = true;
+  landMat.polygonOffsetFactor = 1;
+  landMat.polygonOffsetUnits = 1;
   const seawallMat = new THREE.MeshStandardNodeMaterial({
     color: 0x5c5a55,
     roughness: 0.82,
