@@ -11,15 +11,17 @@ import {
   segmentFrame
 } from '../js/hk-road-deck.js';
 
-test('carriageway width follows class, then refuses a hairline or a plaza', () => {
-  assert.equal(carriagewayWidth({ w: 3, lanes: 1 }), 6.5);
-  assert.equal(carriagewayWidth({ w: 7, lanes: 2 }), 8);
-  assert.equal(carriagewayWidth({ w: 10, lanes: 3 }), 10.2);
+test('carriageway width keeps a real tag and only floors a hairline', () => {
+  assert.equal(carriagewayWidth({ w: 3, lanes: 1 }), 3.6);
+  assert.equal(carriagewayWidth({ w: 5, lanes: 1 }), 5);
+  assert.equal(carriagewayWidth({ w: 7, lanes: 2 }), 7);
+  assert.equal(carriagewayWidth({ w: 6, lanes: 2 }), 6);
+  assert.equal(carriagewayWidth({ w: 10, lanes: 3 }), 10);
   assert.equal(carriagewayWidth({ w: 11, lanes: 3 }), 11);
   assert.equal(carriagewayWidth({ w: 17, lanes: 5, highway: true }), 17);
-  assert.equal(carriagewayWidth({ w: 4, lanes: 2, highway: true }), 12);
+  assert.equal(carriagewayWidth({ w: 4, lanes: 2, highway: true }), 10.5);
   assert.equal(carriagewayWidth({ w: 40, lanes: 8 }), 22);
-  assert.equal(carriagewayWidth({}), 6.5);
+  assert.equal(carriagewayWidth({}), 3.6);
 });
 
 test('travel direction treats an untagged centreline as two-way', () => {
@@ -87,7 +89,7 @@ test('parallel centrelines share one painted corridor and keep the outer curb', 
   const des = deck.asphalt.filter((s) => s.name === 'DES VOEUX');
   assert.equal(des.length, 2);
   assert.ok(des.some((s) => s.w >= 10));
-  assert.ok(des.some((s) => Math.abs(s.x - 4) < 0.01 && s.w >= 8));
+  assert.ok(des.some((s) => Math.abs(s.x - 4) < 0.01 && s.w === 6));
 
   const mid = deck.markings.filter((m) => m.z > 8 && m.z < 32);
   assert.ok(mid.length > 0);
@@ -111,7 +113,7 @@ test('parallel centrelines share one painted corridor and keep the outer curb', 
 test('committed Des Voeux Central is an asphalt corridor with paint and a curb', () => {
   const deck = planHkRoadDeck(ROADS, HK_CORE_WORLD);
   assert.ok(deck.asphalt.length > 1000);
-  assert.ok(deck.asphalt.every((s) => s.w >= 6.5 && s.w <= 22));
+  assert.ok(deck.asphalt.every((s) => s.w >= 3.2 && s.w <= 22));
 
   const named = ROADS.find((r) => r.raw === 'DES VOEUX ROAD CENTRAL' && r.w >= 10);
   assert.ok(named);

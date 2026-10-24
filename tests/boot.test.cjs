@@ -47,9 +47,9 @@ test('Hong Kong boot builders stay on the harbour, landmark, and Central footpri
   assert.match(grid, /buildHkRoadRibbons\(group, roadMat, sidewalkMat\)/);
   assert.match(grid, /planHkRoadDeck\(ROADS, HK_CORE_WORLD\)/);
   assert.match(grid, /HkCurbs/);
-  assert.match(grid, /planHkGroundFill/);
-  assert.match(grid, /HkCentralCityFloor/);
-  assert.match(grid, /HK_CITY_FLOOR_Y/);
+  assert.match(grid, /planHkStreetCanyon/);
+  assert.match(grid, /HkCentralStreetWalls/);
+  assert.match(grid, /HK_CANYON_HEIGHT/);
   assert.match(grid, /HongKongCoastGround/);
   assert.match(grid, /VictoriaHarbourWater/);
   const map = read('js/hk-map.js');

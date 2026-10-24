@@ -1,50 +1,17 @@
-// Central city floor from the OSM coast ring already in GEO.
-// The coast plate is the whole island. This clip keeps only land inside the
-// Central box, so Victoria Harbour (water outside the ring, including the
-// north edge of the box) stays water. Gardens and large parks become lawns.
-// Promenades, the pier waterfront, and Statue Square stay paved.
+// Central street canyon. The carriageway keeps its tagged width. Past a narrow
+// curb and sidewalk the next thing is a podium, either meeting a LandsD
+// footprint or standing in for a side that has none. There is no plaza fill
+// and no lawn verge. Victoria Harbour stays outside the island ring.
 
-// Just above the coast plate (y = 0) and below the asphalt ribbon, which
-// starts at y = 0.02. The deck, curb, and sidewalk stay the surfaces you drive.
-export const HK_CITY_FLOOR_Y = 0.012;
-// Above the floor, still below the asphalt top (0.02 + 0.055).
-export const HK_CITY_LAWN_Y = 0.04;
+import { carriagewayWidth, HK_CURB_W, HK_WALK_W, segmentFrame } from './hk-road-deck.js';
 
-const LAWN_MIN_AREA = 80;
-
-function cleanRing(pts) {
-  const out = [];
-  for (const p of pts) {
-    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
-    const prev = out[out.length - 1];
-    if (prev && Math.abs(prev.x - p.x) < 1e-3 && Math.abs(prev.z - p.z) < 1e-3) continue;
-    out.push({ x: p.x, z: p.z });
-  }
-  if (out.length >= 2) {
-    const a = out[0];
-    const b = out[out.length - 1];
-    if (Math.abs(a.x - b.x) < 1e-3 && Math.abs(a.z - b.z) < 1e-3) out.pop();
-  }
-  return out;
-}
-
-export function asRing(ring) {
-  if (!ring || !ring.length) return [];
-  if (typeof ring[0] === 'number') {
-    const pts = [];
-    for (let i = 0; i + 1 < ring.length; i += 2) pts.push({ x: ring[i], z: ring[i + 1] });
-    return cleanRing(pts);
-  }
-  return cleanRing(ring);
-}
-
-export function ringArea(ring) {
-  let area = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    area += ring[j].x * ring[i].z - ring[i].x * ring[j].z;
-  }
-  return area * 0.5;
-}
+export const HK_CANYON_DEPTH = 12;
+export const HK_CANYON_HEIGHT = 18;
+export const HK_CANYON_REACH = 22;
+const MIN_LEN = 5.5;
+const END_GAP = 1.15;
+const BITE = 0.3;
+const CELL = 28;
 
 export function pointInRing(x, z, ring) {
   if (!ring || ring.length < 3) return false;
@@ -57,105 +24,195 @@ export function pointInRing(x, z, ring) {
   return inside;
 }
 
-function lerpPoint(a, b, t) {
-  return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+function hitsBox(ax, az, bx, bz, box) {
+  if (!box) return true;
+  const minX = Math.min(ax, bx);
+  const maxX = Math.max(ax, bx);
+  const minZ = Math.min(az, bz);
+  const maxZ = Math.max(az, bz);
+  return maxX >= box.minX && minX <= box.maxX && maxZ >= box.minZ && minZ <= box.maxZ;
 }
 
-function clipAgainst(pts, inside, cross) {
-  const out = [];
-  for (let i = 0; i < pts.length; i++) {
-    const cur = pts[i];
-    const prev = pts[(i + pts.length - 1) % pts.length];
-    const curIn = inside(cur);
-    const prevIn = inside(prev);
-    if (curIn) {
-      if (!prevIn) {
-        const hit = cross(prev, cur);
-        if (hit) out.push(hit);
+function distToSeg(px, pz, seg) {
+  const dx = seg.bx - seg.ax;
+  const dz = seg.bz - seg.az;
+  const len2 = dx * dx + dz * dz || 1e-9;
+  let t = ((px - seg.ax) * dx + (pz - seg.az) * dz) / len2;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  return Math.hypot(px - (seg.ax + t * dx), pz - (seg.az + t * dz));
+}
+
+function cellKey(x, z, cell) {
+  return `${Math.floor(x / cell)}:${Math.floor(z / cell)}`;
+}
+
+function buildGrid(items, boundsOf, cell) {
+  const grid = new Map();
+  for (const item of items) {
+    const box = boundsOf(item);
+    const ix0 = Math.floor(box.minX / cell);
+    const ix1 = Math.floor(box.maxX / cell);
+    const iz0 = Math.floor(box.minZ / cell);
+    const iz1 = Math.floor(box.maxZ / cell);
+    for (let ix = ix0; ix <= ix1; ix++) {
+      for (let iz = iz0; iz <= iz1; iz++) {
+        const key = `${ix}:${iz}`;
+        let bucket = grid.get(key);
+        if (!bucket) grid.set(key, (bucket = []));
+        bucket.push(item);
       }
-      out.push(cur);
-    } else if (prevIn) {
-      const hit = cross(prev, cur);
-      if (hit) out.push(hit);
     }
   }
-  return cleanRing(out);
+  return grid;
 }
 
-function crossAt(a, b, axis, limit) {
-  const delta = b[axis] - a[axis];
-  if (Math.abs(delta) < 1e-9) return null;
-  const t = (limit - a[axis]) / delta;
-  if (t < -1e-6 || t > 1 + 1e-6) return null;
-  return lerpPoint(a, b, Math.min(1, Math.max(0, t)));
-}
-
-// Sutherland–Hodgman against an axis-aligned box. The clip window is convex,
-// so a concave coastline still comes back as one ring.
-export function clipRingToBox(ring, box) {
-  if (!box) return null;
-  let pts = asRing(ring);
-  if (pts.length < 3) return null;
-  const edges = [
-    [(p) => p.x >= box.minX, (a, b) => crossAt(a, b, 'x', box.minX)],
-    [(p) => p.x <= box.maxX, (a, b) => crossAt(a, b, 'x', box.maxX)],
-    [(p) => p.z >= box.minZ, (a, b) => crossAt(a, b, 'z', box.minZ)],
-    [(p) => p.z <= box.maxZ, (a, b) => crossAt(a, b, 'z', box.maxZ)]
-  ];
-  for (const [inside, cross] of edges) {
-    pts = clipAgainst(pts, inside, cross);
-    if (pts.length < 3) return null;
+function footprintAt(x, z, grid) {
+  const bucket = grid.get(cellKey(x, z, CELL));
+  if (!bucket) return null;
+  for (const b of bucket) {
+    if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
+    if (pointInRing(x, z, b.poly)) return b;
   }
-  return pts;
+  return null;
 }
 
-export function isCityLawn(park) {
-  if (!park) return false;
-  const name = String(park.name || '');
-  if (/海濱|promenade|waterfront|廣場|statue square|摩天輪|observation wheel/i.test(name)) return false;
-  const acres = Number(park.acres);
-  if (park.cat === 'garden') return true;
-  if (park.cat === 'park' && Number.isFinite(acres) && acres >= 3) return true;
+function insideOtherAsphalt(x, z, grid, selfId) {
+  const bucket = grid.get(cellKey(x, z, 24));
+  if (!bucket) return false;
+  for (const seg of bucket) {
+    if (seg.id === selfId) continue;
+    if (distToSeg(x, z, seg) < seg.half - 0.35) return true;
+  }
   return false;
 }
 
-function ringCentroid(ring) {
-  const area = ringArea(ring);
-  if (Math.abs(area) < 1e-6) {
-    let x = 0;
-    let z = 0;
-    for (const p of ring) {
-      x += p.x;
-      z += p.z;
+function obbOf(x, z, yaw, depth, len) {
+  const cs = Math.cos(yaw);
+  const sn = Math.sin(yaw);
+  const hx = depth * 0.5;
+  const hz = len * 0.5;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const lx of [hx, -hx]) {
+    for (const lz of [hz, -hz]) {
+      const wx = x + lx * cs + lz * sn;
+      const wz = z - lx * sn + lz * cs;
+      if (wx < minX) minX = wx;
+      if (wx > maxX) maxX = wx;
+      if (wz < minZ) minZ = wz;
+      if (wz > maxZ) maxZ = wz;
     }
-    return { x: x / ring.length, z: z / ring.length };
   }
-  let x = 0;
-  let z = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const cross = ring[j].x * ring[i].z - ring[i].x * ring[j].z;
-    x += (ring[j].x + ring[i].x) * cross;
-    z += (ring[j].z + ring[i].z) * cross;
-  }
-  return { x: x / (6 * area), z: z / (6 * area) };
+  return {
+    minX,
+    maxX,
+    minZ,
+    maxZ,
+    obb: { cx: x, cz: z, cs, sn, hx, hz }
+  };
 }
 
-export function planHkGroundFill({ island, parks, core } = {}) {
-  const floor = clipRingToBox(island, core);
-  const lawns = [];
-  if (!floor) return { floor: null, lawns };
-  for (const park of parks || []) {
-    if (!isCityLawn(park)) continue;
-    const rings = park.rings || [];
-    for (const raw of rings) {
-      const clipped = clipRingToBox(raw, core);
-      if (!clipped || clipped.length < 3) continue;
-      if (Math.abs(ringArea(clipped)) < LAWN_MIN_AREA) continue;
-      const center = ringCentroid(clipped);
-      if (!pointInRing(center.x, center.z, island)) continue;
-      if (!pointInRing(center.x, center.z, floor)) continue;
-      lawns.push({ name: park.name || '', ring: clipped });
+function frontage(seg, sign, buildings, asphalt, island, walk, curb, depth, reach) {
+  const sidewalkOuter = seg.half + curb + walk;
+  let hit = null;
+  const limit = seg.half + reach;
+  for (let d = seg.half + 0.4; d <= limit; d += 1.5) {
+    const x = seg.x + seg.rx * sign * d;
+    const z = seg.z + seg.rz * sign * d;
+    const found = footprintAt(x, z, buildings);
+    if (found) {
+      hit = d;
+      break;
     }
   }
-  return { floor, lawns };
+  let wallDepth = depth;
+  if (hit != null) {
+    const gap = hit - sidewalkOuter;
+    if (gap <= 0.8) return null;
+    wallDepth = gap <= depth + 6 ? gap + BITE : depth;
+  }
+  wallDepth = Math.min(depth + 6, Math.max(wallDepth, 0));
+  const tries = [wallDepth, Math.min(wallDepth, depth), 8, 5, 3.2];
+  for (const candidate of tries) {
+    if (candidate < 1.5 || candidate > wallDepth + 0.01) continue;
+    const mid = sidewalkOuter - 0.12 + candidate * 0.5;
+    const outer = sidewalkOuter - 0.12 + candidate;
+    const mx = seg.x + seg.rx * sign * mid;
+    const mz = seg.z + seg.rz * sign * mid;
+    const ox = seg.x + seg.rx * sign * outer;
+    const oz = seg.z + seg.rz * sign * outer;
+    if (island && (!pointInRing(mx, mz, island) || !pointInRing(ox, oz, island))) continue;
+    if (insideOtherAsphalt(mx, mz, asphalt, seg.id) || insideOtherAsphalt(ox, oz, asphalt, seg.id)) continue;
+    const len = seg.len - END_GAP * 2;
+    if (len < 3.2) return null;
+    const box = obbOf(mx, mz, seg.yaw, candidate, len);
+    return {
+      x: mx,
+      z: mz,
+      yaw: seg.yaw,
+      depth: candidate,
+      len,
+      ...box
+    };
+  }
+  return null;
+}
+
+export function planHkStreetCanyon({
+  roads,
+  buildings,
+  core,
+  island,
+  walk = HK_WALK_W,
+  curb = HK_CURB_W,
+  depth = HK_CANYON_DEPTH,
+  reach = HK_CANYON_REACH
+} = {}) {
+  const segs = [];
+  let id = 0;
+  for (const road of roads || []) {
+    const width = carriagewayWidth(road);
+    const pts = road.pts || [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      if (!a || !b) continue;
+      if (!hitsBox(a.x, a.z, b.x, b.z, core)) continue;
+      const frame = segmentFrame(a.x, a.z, b.x, b.z, MIN_LEN);
+      if (!frame) continue;
+      segs.push({
+        ...frame,
+        id: id++,
+        ax: a.x,
+        az: a.z,
+        bx: b.x,
+        bz: b.z,
+        half: width * 0.5
+      });
+    }
+  }
+  const asphalt = buildGrid(
+    segs,
+    (seg) => ({
+      minX: Math.min(seg.ax, seg.bx) - seg.half,
+      maxX: Math.max(seg.ax, seg.bx) + seg.half,
+      minZ: Math.min(seg.az, seg.bz) - seg.half,
+      maxZ: Math.max(seg.az, seg.bz) + seg.half
+    }),
+    24
+  );
+  const footprints = (buildings || []).filter((b) => b && b.poly && b.poly.length >= 3 && b.maxX > b.minX && b.maxZ > b.minZ);
+  const blocks = buildGrid(footprints, (b) => b, CELL);
+  const walls = [];
+  for (const seg of segs) {
+    if (island && !pointInRing(seg.x, seg.z, island)) continue;
+    for (const sign of [1, -1]) {
+      const wall = frontage(seg, sign, blocks, asphalt, island, walk, curb, depth, reach);
+      if (wall) walls.push(wall);
+    }
+  }
+  return { walls };
 }

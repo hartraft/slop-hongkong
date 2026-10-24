@@ -1,10 +1,14 @@
 // Central carriageway deck from the LandsD / OSM centreline.
-// Width is class-aware because a one-lane OSM tag rounds to a 3 m thread.
+// A tagged width is the carriageway. Class floors apply only when the tag is
+// missing or a hairline, so a 3–5 m Central street is not widened into an avenue.
 // Parallel parts of the same street (Des Voeux is several) contribute asphalt,
 // and only the outer curb and the wider carriageway's paint are kept.
 
-const CURB_W = 0.42;
-const WALK_W = 3.15;
+export const HK_CURB_W = 0.42;
+// Narrow walk. The building face sits on the outer edge of this, not a setback.
+export const HK_WALK_W = 2.05;
+const CURB_W = HK_CURB_W;
+const WALK_W = HK_WALK_W;
 const CORE_MARGIN = 28;
 const MIN_LEN = 0.8;
 const JUNCTION_CELL = 6;
@@ -16,14 +20,17 @@ function round1(value) {
 export function carriagewayWidth({ w = 0, lanes = 0, highway = false } = {}) {
   const tagged = Number.isFinite(+w) ? +w : 0;
   const laneCount = Number.isFinite(+lanes) ? Math.max(0, Math.round(+lanes)) : 0;
-  const fromLanes = laneCount >= 2 ? laneCount * 3.4 : 0;
-  let floor = 6.5;
-  if (highway) floor = 12;
-  else if (laneCount >= 4 || tagged >= 13) floor = 12;
-  else if (laneCount >= 3 || tagged >= 9.5) floor = 10;
-  else if (laneCount >= 2 || tagged >= 7) floor = 8;
-  const width = Math.max(floor, tagged, fromLanes);
-  if (!Number.isFinite(width) || width <= 0) return 6.5;
+  const fromLanes = laneCount >= 1 ? laneCount * 3.05 : 0;
+  let floor = 3.6;
+  if (laneCount >= 4) floor = 9.6;
+  else if (laneCount >= 3) floor = 7.8;
+  else if (laneCount >= 2) floor = 5.8;
+  // Highways keep a floor so a bad tag cannot turn Connaught into a lane.
+  // Every other tagged street keeps the tag, including a 3 m hill street.
+  if (highway) return Math.min(22, round1(Math.max(10.5, tagged, fromLanes)));
+  if (tagged >= 3.2) return Math.min(22, round1(tagged));
+  const width = Math.max(floor, fromLanes);
+  if (!Number.isFinite(width) || width <= 0) return 3.6;
   return Math.min(22, round1(width));
 }
 

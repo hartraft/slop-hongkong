@@ -11,14 +11,14 @@ import {
 } from './city-config.js';
 import {
   createCurbMaterial,
+  createCurtainWallMaterial,
   createLaneStripeMaterial,
-  createParkLawnMaterial,
   createRoadSurfaceMaterial,
   createSidewalkMaterial,
   createWaterMaterial
 } from './tsl-materials.js';
 import { GEO } from './geo-source.js';
-import { HK_CITY_FLOOR_Y, HK_CITY_LAWN_Y, planHkGroundFill } from './hk-ground-fill.js';
+import { HK_CANYON_HEIGHT, planHkStreetCanyon } from './hk-ground-fill.js';
 import { planHkRoadDeck } from './hk-road-deck.js';
 
 // Hong Kong coast, Victoria Harbour, and the centreline asphalt deck. Lots stay in buildings.js.
@@ -201,55 +201,53 @@ function buildCityGrid(scene) {
   return buildHkCityGrid(scene);
 }
 
-// The island ring is the coast plate. Central replaces the visible part of that
-// plate with concrete, and keeps gardens as lawn. The asphalt deck is unchanged.
-function buildHkCentralFloor(group) {
-  const plan = planHkGroundFill({
-    island: HONG_KONG_ISLAND_COASTLINE,
-    parks: GEO.parks,
-    core: HK_CORE_WORLD
+// Podiums hard against the sidewalk. A LandsD footprint within reach is met;
+// a side with none still gets a street wall. The harbour ring is not walled.
+function buildHkStreetCanyon(group) {
+  const buildings = [];
+  for (const b of BLOCKS) {
+    if (b.park > 0.6 || b.median || !(b.height > 0) || !b.poly || b.poly.length < 3) continue;
+    if (b.maxX < HK_CORE_WORLD.minX - 40 || b.minX > HK_CORE_WORLD.maxX + 40) continue;
+    if (b.maxZ < HK_CORE_WORLD.minZ - 40 || b.minZ > HK_CORE_WORLD.maxZ + 40) continue;
+    buildings.push(b);
+  }
+  const plan = planHkStreetCanyon({
+    roads: ROADS,
+    buildings,
+    core: HK_CORE_WORLD,
+    island: HONG_KONG_ISLAND_COASTLINE
   });
-  if (!plan.floor) return;
-  const floorMat = createSidewalkMaterial();
-  floorMat.name = 'hkCentralCityFloor';
-  floorMat.side = THREE.DoubleSide;
-  // Weaker pull than the asphalt (factor -1) so the deck stays on top.
-  floorMat.polygonOffset = true;
-  floorMat.polygonOffsetFactor = -0.35;
-  floorMat.polygonOffsetUnits = -1;
-  const floor = createFlatPolygonMesh(plan.floor, HK_CITY_FLOOR_Y, floorMat, true);
-  floor.name = 'HkCentralCityFloor';
-  floor.castShadow = false;
-  group.add(floor);
-
-  const lawnGeos = [];
-  let lawnMat = null;
-  for (const lawn of plan.lawns) {
-    try {
-      if (!lawnMat) {
-        lawnMat = createParkLawnMaterial(false);
-        lawnMat.name = 'hkCentralLawn';
-        lawnMat.side = THREE.DoubleSide;
-        lawnMat.polygonOffset = true;
-        lawnMat.polygonOffsetFactor = -0.55;
-        lawnMat.polygonOffsetUnits = -1;
-      }
-      lawnGeos.push(createFlatPolygonMesh(lawn.ring, HK_CITY_LAWN_Y, lawnMat, true).geometry);
-    } catch {
-      // A bad garden ring must not drop the city floor.
-    }
-  }
-  if (lawnGeos.length && lawnMat) {
-    const merged = mergeGeometries(lawnGeos, false);
-    if (merged) {
-      const lawns = new THREE.Mesh(merged, lawnMat);
-      lawns.name = 'HkCentralParkLawns';
-      lawns.receiveShadow = true;
-      lawns.castShadow = false;
-      group.add(lawns);
-    }
-  }
-  console.info(`[ground] Central city floor ${plan.floor.length} verts, lawns ${lawnGeos.length}`);
+  const wallMat = createCurtainWallMaterial({
+    glassTint: 0x1c3a45,
+    frameTint: 0x9aa6b0,
+    windowWidth: 3.15,
+    floorHeight: 3.9,
+    spandrelRatio: 0.3,
+    litProbability: 0.84,
+    warmth: 0.74,
+    reflectivity: 0.82,
+    seed: 2.4,
+    boxLocal: false
+  });
+  wallMat.name = 'hkCanyonPodium';
+  addHkRibbonMesh(
+    group,
+    wallMat,
+    plan.walls.map((wall) => ({ x: wall.x, z: wall.z, yaw: wall.yaw, w: wall.depth, len: wall.len })),
+    0.16,
+    HK_CANYON_HEIGHT,
+    'HkCentralStreetWalls',
+    1
+  );
+  console.info(`[ground] Central street walls ${plan.walls.length}`);
+  return plan.walls.map((wall) => ({
+    minX: wall.minX,
+    maxX: wall.maxX,
+    minZ: wall.minZ,
+    maxZ: wall.maxZ,
+    maxY: 0.16 + HK_CANYON_HEIGHT,
+    obb: wall.obb
+  }));
 }
 
 // Coast rings become land. Carriageways are an asphalt deck on GEO.roads.
@@ -301,7 +299,7 @@ function buildHkCityGrid(scene) {
 
   const roadMat = createRoadSurfaceMaterial();
   const sidewalkMat = createSidewalkMaterial();
-  buildHkCentralFloor(group);
+  const canyonColliders = buildHkStreetCanyon(group);
   buildHkRoadRibbons(group, roadMat, sidewalkMat);
   buildHkPierDecks(group);
 
@@ -316,7 +314,7 @@ function buildHkCityGrid(scene) {
   batchStaticGroupMeshes(group, new Set([waterMat, roadMat, sidewalkMat, landMat]));
   scene.add(group);
   console.info(`[ground] HK coast rings ${HONG_KONG_ISLAND_COASTLINE.length}+${KOWLOON_COASTLINE.length} water ${play.minX.toFixed(0)}..${play.maxX.toFixed(0)} x ${play.minZ.toFixed(0)}..${play.maxZ.toFixed(0)}`);
-  return { group, sidewalks: roadSidewalks, footprints: [], highwayLanes: [], colliders: [] };
+  return { group, sidewalks: roadSidewalks, footprints: [], highwayLanes: [], colliders: canyonColliders };
 }
 
 export { buildCityGrid, batchStaticGroupMeshes };
