@@ -50,6 +50,7 @@ import {
   OUTER_BRIDGES,
   streetZ
 } from './city-config.js';
+import { GEO } from './geo-source.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // js/boroughs.js
@@ -3339,7 +3340,36 @@ function createLandmarkMaterials() {
  * columns stand only on blocks. Returns the colliders of the bridge parts standing on Manhattan (anchorages, piers,
  * columns, deck ends too low to drive under).
  */
+function buildHkHarbourLand(scene) {
+  const group = new THREE.Group();
+  group.name = 'Boroughs';
+  const landMat = new THREE.MeshStandardNodeMaterial({
+    color: 0x6e7b63,
+    roughness: 0.94,
+    metalness: 0
+  });
+  landMat.name = 'hkHarbourLand';
+  const { topGeo, wallGeo } = buildLandGeometries();
+  const topCount = topGeo.getAttribute('position') ? topGeo.getAttribute('position').count : 0;
+  if (topCount > 0) {
+    const landMesh = new THREE.Mesh(topGeo, landMat);
+    landMesh.name = 'BoroughLand';
+    landMesh.receiveShadow = true;
+    group.add(landMesh);
+  }
+  const wallCount = wallGeo.getAttribute('position') ? wallGeo.getAttribute('position').count : 0;
+  if (wallCount > 0) {
+    const wallMesh = new THREE.Mesh(wallGeo, createBulkheadMaterial());
+    wallMesh.name = 'BoroughBulkheads';
+    group.add(wallMesh);
+  }
+  scene.add(group);
+  console.info(`[boroughs] HK coast land only (${topCount} land verts). NYC grids, Palisades, Liberty, bridges skipped`);
+  return { group, ridgeHeightAt, landAt, colliders: [], update() {} };
+}
+
 function buildBoroughs(scene, { sidewalks = [] } = {}) {
+  if (GEO.frame && GEO.frame.city === 'hk') return buildHkHarbourLand(scene);
   const t0 = performance.now();
   const group = new THREE.Group();
   group.name = 'Boroughs';

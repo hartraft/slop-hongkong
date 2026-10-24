@@ -32,6 +32,7 @@ import {
   MANHATTAN_COASTLINE,
   WATERFRONT_PIERS,
   BLOCKS,
+  ROADS,
   streetZ,
   avenueX,
   ALL_AVENUES,
@@ -239,6 +240,57 @@ function createExtrudedPolygonMesh(pts, bottomY, height, material, receiveShadow
   mesh.receiveShadow = receiveShadow;
   mesh.castShadow = castShadow;
   return mesh;
+}
+
+function buildHkRoadRibbons(group) {
+  const mat = new THREE.MeshStandardNodeMaterial({ color: 0x2c3136, roughness: 0.92, metalness: 0.02 });
+  mat.name = 'hkRoadCentreline';
+  const geos = [];
+  for (const road of ROADS) {
+    const w = Math.max(6, road.w || 8);
+    const pts = road.pts || [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.4) continue;
+      const geo = new THREE.BoxGeometry(w, 0.07, len + Math.min(w * 0.35, 6));
+      geo.rotateY(Math.atan2(dx, dz));
+      geo.translate((a.x + b.x) * 0.5, 0.045, (a.z + b.z) * 0.5);
+      geos.push(geo);
+    }
+  }
+  if (!geos.length) return;
+  const mesh = new THREE.Mesh(mergeGeometries(geos, false), mat);
+  mesh.name = 'HkRoadCentrelines';
+  mesh.receiveShadow = true;
+  group.add(mesh);
+}
+
+function buildHkPierDecks(group) {
+  const mat = new THREE.MeshStandardNodeMaterial({ color: 0x8d8880, roughness: 0.82, metalness: 0.04 });
+  mat.name = 'hkPierDeck';
+  const geos = [];
+  for (const p of GEO.piers || []) {
+    const ring = p.ring;
+    if (!ring || ring.length < 6) continue;
+    const pts = [];
+    for (let i = 0; i < ring.length; i += 2) pts.push({ x: ring[i], z: ring[i + 1] });
+    if (pts.length < 3) continue;
+    try {
+      geos.push(createExtrudedPolygonMesh(pts, 0.02, 0.32, mat, true, false).geometry);
+    } catch {
+      // A bad ring must not drop the rest of the harbour decks.
+    }
+  }
+  if (!geos.length) return;
+  const mesh = new THREE.Mesh(mergeGeometries(geos, false), mat);
+  mesh.name = 'HkPierDecks';
+  mesh.receiveShadow = true;
+  mesh.castShadow = true;
+  group.add(mesh);
 }
 
 function createFlatPolygonMesh(pts, y, material, receiveShadow = true) {
@@ -1557,11 +1609,17 @@ function buildCityGrid(scene) {
       curbGeos.push(curb);
       const inner = offsetPolygonInward(b.poly, 0.25);
       if (inner) slabGeos.push(createExtrudedPolygonMesh(inner, 0.03, SW_TOP - 0.03, sidewalkMat).geometry);
-      // rect cover for the consumers that work on rectangles: the lot rects grown back out to the curb
-      for (const [x0, x1, z0, z1] of b.rects) {
-        const r = { minX: x0 - 4.4, maxX: x1 + 4.4, minZ: z0 - 4.4, maxZ: z1 + 4.4 };
-        blockSidewalks.push({ cx: (r.minX + r.maxX) * 0.5, cz: (r.minZ + r.maxZ) * 0.5, w: r.maxX - r.minX, d: r.maxZ - r.minZ, block: b, cover: true });
-        if (!b.median) roadSidewalks.push(r);
+      // Hong Kong lots are building footprints. Keep the polygon sidewalk and a tight
+      // curb box so traffic does not drive through the tower. The Manhattan path grows
+      // lot rects back out to the curb.
+      if (GEO.frame.city === 'hk') {
+        roadSidewalks.push({ minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ });
+      } else {
+        for (const [x0, x1, z0, z1] of b.rects) {
+          const r = { minX: x0 - 4.4, maxX: x1 + 4.4, minZ: z0 - 4.4, maxZ: z1 + 4.4 };
+          blockSidewalks.push({ cx: (r.minX + r.maxX) * 0.5, cz: (r.minZ + r.maxZ) * 0.5, w: r.maxX - r.minX, d: r.maxZ - r.minZ, block: b, cover: true });
+          if (!b.median) roadSidewalks.push(r);
+        }
       }
       if (b.median) addFootprint((b.minX + b.maxX) * 0.5, (b.minZ + b.maxZ) * 0.5, b.maxX - b.minX, b.maxZ - b.minZ);
     }
@@ -2510,12 +2568,17 @@ function buildCityGrid(scene) {
   // Concrete decks on timber piles with fenders, railings & lanterns, plus each pier's real structures:
   // cruise terminals, Chelsea Piers, Pier 57, Little Island, Pier 40, the Intrepid, the 79th St Boat Basin,
   // Pier 17, the Wavertree, Pier 15, Pier 11 and the Staten Island Ferry Whitehall Terminal (see buildWaterfrontPiers)
-  buildWaterfrontPiers(group);
-
-  // 9 & 10. The East River bridges, harbor islands and the surrounding boroughs are built by boroughs.js
-
-  // 11. Manhattan's waterfront edge: esplanades, shore highways & riverside park belts (see buildManhattanWaterfrontEdge)
-  const highwayLanes = buildManhattanWaterfrontEdge(group, { blockSidewalks, treeSites, lawnMat: cpLawnMat, curbMat, roadMat });
+  let highwayLanes = [];
+  if (GEO.frame.city === 'hk') {
+    // Centreline ribbons from GEO.roads and OSM pier decks. No FDR / West Side Highway lattice.
+    buildHkRoadRibbons(group);
+    buildHkPierDecks(group);
+  } else {
+    buildWaterfrontPiers(group);
+    // 9 & 10. The East River bridges, harbor islands and the surrounding boroughs are built by boroughs.js
+    // 11. Manhattan's waterfront edge: esplanades, shore highways & riverside park belts (see buildManhattanWaterfrontEdge)
+    highwayLanes = buildManhattanWaterfrontEdge(group, { blockSidewalks, treeSites, lawnMat: cpLawnMat, curbMat, roadMat });
+  }
 
   // Batch static sub-meshes by material to reduce per-frame WebGPU draw calls
   batchStaticGroupMeshes(group, new Set([waterMat, roadMat, cpLawnMat, cpMeadowMat]));

@@ -12,6 +12,7 @@ import {
   BLOCKS,
   LANDMARK_SITES
 } from './city-config.js';
+import { GEO } from './geo-source.js';
 import { cityUniforms, createSteamMaterial, createTreeGrateMaterial, createGodRayMaterial } from './tsl-materials.js';
 import { createTreeField } from './trees.js';
 import { pavedPlazaRects, centralParkClearings, parkTreeSites, sidewalkBlocks, parkLampSites } from './city-grid.js';
@@ -103,6 +104,14 @@ function createWalkSignalMaterial(clock) {
 }
 
 function buildStreetDetails(scene) {
+  if (GEO.frame && GEO.frame.city === 'hk') {
+    // NYC yellow signals, cobra heads, steam stacks, subway globes and halal carts are
+    // placed from the Manhattan avenue lattice and fromOldFrame. Hong Kong has neither.
+    const group = new THREE.Group();
+    group.name = 'ManhattanStreetDetails';
+    scene.add(group);
+    return { group, footprints: [], signalClock: uniform(0), audioSignals: [], update() {} };
+  }
   const group = new THREE.Group();
   group.name = 'ManhattanStreetDetails';
 

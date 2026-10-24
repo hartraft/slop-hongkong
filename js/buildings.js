@@ -257,7 +257,86 @@ function carve(r, holes, axis = 'x') {
   return out.map(([u0, u1, v0, v1]) => (flip ? rect(v0, v1, u0, u1) : rect(u0, u1, v0, v1)));
 }
 
+// One mesh per LandsD footprint, extruded to the tuple height. The Manhattan lot filler
+// only walks rects/frames and then invents storeys, water towers and fire escapes.
+function buildHkFootprintBlocks(scene) {
+  const group = new THREE.Group();
+  group.name = 'ManhattanCityBlocks';
+  const colliders = [];
+  const allBlocks = [];
+  const mat = new THREE.MeshStandardNodeMaterial({
+    color: 0xd5d0c4,
+    roughness: 0.7,
+    metalness: 0.06
+  });
+  mat.name = 'hkFootprint';
+  const geos = [];
+  const built = [];
+  for (const b of BLOCKS) {
+    if (!b.poly || b.poly.length < 3 || b.park > 0.6) continue;
+    const h = typeof b.height === 'number' && b.height > 0 ? b.height : 18;
+    let geo = null;
+    try {
+      const shape = new THREE.Shape();
+      shape.moveTo(b.poly[0].x, -b.poly[0].z);
+      for (let i = 1; i < b.poly.length; i++) shape.lineTo(b.poly[i].x, -b.poly[i].z);
+      shape.closePath();
+      geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 1 });
+      geo.rotateX(-Math.PI / 2);
+      geo.translate(0, 0.22, 0);
+    } catch {
+      geo = null;
+    }
+    if (!geo) {
+      const w = Math.max(1, b.maxX - b.minX);
+      const d = Math.max(1, b.maxZ - b.minZ);
+      geo = new THREE.BoxGeometry(w, h, d);
+      geo.translate(b.cx, 0.22 + h * 0.5, b.cz);
+    }
+    geos.push(geo);
+    colliders.push({ minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ, maxY: 0.22 + h });
+    allBlocks.push({
+      id: b.name || `hk_${b.id}`,
+      cx: b.cx,
+      cz: b.cz,
+      minX: b.minX,
+      maxX: b.maxX,
+      minZ: b.minZ,
+      maxZ: b.maxZ,
+      district: b.district || 'hk_cbd',
+      maxH: h,
+      footprints: [{ x0: b.minX, x1: b.maxX, z0: b.minZ, z1: b.maxZ, h, pts: b.poly }],
+      cornices: [],
+      waterTowers: [],
+      hvacUnits: [],
+      fireEscapes: [],
+      awnings: [],
+      scaffoldSheds: [],
+      yards: []
+    });
+    built.push(`${b.name || b.id} ${h}m`);
+  }
+  if (geos.length) {
+    const mesh = new THREE.Mesh(mergeGeometries(geos, false), mat);
+    mesh.name = 'HkFootprints';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  scene.add(group);
+  console.info(`[buildings] HK footprints ${built.length}: ${built.join('; ')}`);
+  return {
+    group,
+    colliders,
+    quadtree: null,
+    allBlocks,
+    update() {},
+    updateLights() {}
+  };
+}
+
 function buildCityBlocks(scene) {
+  if (GEO.frame && GEO.frame.city === 'hk') return buildHkFootprintBlocks(scene);
   const group = new THREE.Group();
   group.name = 'ManhattanCityBlocks';
   const colliders = [];

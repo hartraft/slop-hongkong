@@ -507,7 +507,8 @@ function nearestRoads(x, z, radius = 60) {
 //   frames: irregular islands' lots laid out along the streets they front, [[θ, px, pz, rects], ...] (rects in a
 //   frame turned by θ about (px, pz): world = p + R_y(θ)·(local − p)), or null
 // ---------------------------------------------------------------------------------------------------------------------
-const BLOCKS = GEO.blocks.map(([flat, rects, park, parkName, isRect, frames], id) => {
+const BLOCKS = GEO.blocks.map((tuple, id) => {
+  const [flat, rects, park, parkName, isRect, frames, height, base, name] = tuple;
   const poly = toPts(flat);
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, a = 0, cx = 0, cz = 0;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -518,12 +519,23 @@ const BLOCKS = GEO.blocks.map(([flat, rects, park, parkName, isRect, frames], id
   }
   a *= 0.5;
   const area = Math.abs(a);
+  // Hong Kong tuples append [height, base, name]. A footprint whose axis-aligned rects are
+  // empty still has a polygon; the lot is that polygon's bounding box so a builder can
+  // extrude it. Narrow HK footprints are buildings, not Park Avenue malls.
+  let lotRects = rects && rects.length ? rects : [];
+  if (GEO.frame.city === 'hk' && !lotRects.length && maxX > minX && maxZ > minZ) {
+    lotRects = [[minX, maxX, minZ, maxZ]];
+  }
+  const hk = GEO.frame.city === 'hk';
   return {
-    id, poly, rects, frames: frames || null, park, parkName, rect: !!isRect, area,
+    id, poly, rects: lotRects, frames: frames || null, park, parkName, rect: !!isRect, area,
     minX, maxX, minZ, maxZ,
     cx: a ? cx / (6 * a) : (minX + maxX) / 2,
     cz: a ? cz / (6 * a) : (minZ + maxZ) / 2,
-    median: /Malls?$/.test(parkName) || Math.min(maxX - minX, maxZ - minZ) < 9
+    median: hk ? /Malls?$/.test(parkName || '') : (/Malls?$/.test(parkName || '') || Math.min(maxX - minX, maxZ - minZ) < 9),
+    height: typeof height === 'number' ? height : null,
+    base: typeof base === 'number' ? base : null,
+    name: typeof name === 'string' ? name : ''
   };
 });
 // Spatial index of the blocks (64 m cells)
@@ -577,6 +589,13 @@ const HOUSTON_Z = 3376; // at Broadway
 const CANAL_Z = 4169;
 const CHAMBERS_Z = 4859;
 function districtAt(x, z) {
+  if (GEO.frame.city === 'hk') {
+    // Harbour / CBD from the coast rings. Do not call streetZ or avenueX: those still
+    // fall back to numbered Manhattan streets when GEO.streets is empty.
+    if (pointInPoly(MANHATTAN_COASTLINE, x, z)) return Math.hypot(x, z) < 1200 ? 'hk_cbd' : 'hk_island';
+    if (KOWLOON_COASTLINE.length && pointInPoly(KOWLOON_COASTLINE, x, z)) return 'hk_kowloon';
+    return 'hk_harbour';
+  }
   const cp = CENTRAL_PARK_BOUNDS;
   if (x > cp.minX && x < cp.maxX && z > cp.minZ && z < cp.maxZ) return 'central_park';
   if (z < Z(110)) {
