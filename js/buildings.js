@@ -33,6 +33,7 @@ import {
   HK_NULL_HEIGHT,
   blockInHkCore,
   hkFootprintHeight,
+  hkLandmarkOwnsShaft,
   hkMassingPlan,
   hkScaleRing,
   LANDMARK_SITES,
@@ -389,6 +390,7 @@ function buildHkFootprintBlocks(scene) {
   let skippedOutside = 0;
   let skippedNull = 0;
   let skippedDegenerate = 0;
+  let skippedOwned = 0;
   const flush = (key) => {
     const batch = batches[key];
     if (!batch.length) return;
@@ -417,6 +419,12 @@ function buildHkFootprintBlocks(scene) {
     const h = hkFootprintHeight(b);
     if (!(h > 0)) {
       skippedNull++;
+      continue;
+    }
+    if (hkLandmarkOwnsShaft(b)) {
+      // Bank of China is four triangular prisms. A full-height square plate would
+      // hide that silhouette, so landmarks.js builds this one shaft.
+      skippedOwned++;
       continue;
     }
     const plan = hkMassingPlan(b);
@@ -483,6 +491,7 @@ function buildHkFootprintBlocks(scene) {
     `[buildings] Central core ${HK_CORE_BBOX.south},${HK_CORE_BBOX.west},${HK_CORE_BBOX.north},${HK_CORE_BBOX.east} ` +
     `extruded ${extruded} LandsD footprints; podium+tower ${podiumTowers}; curtain wall ${group.children.length} meshes; ` +
     `null height ${HK_NULL_HEIGHT} ${skippedNull}; ` +
+    `landmark shaft ${skippedOwned}; ` +
     `outside core skipped ${skippedOutside}; degenerate ${skippedDegenerate}` +
     (named.length ? `; ${named.map((block) => `${block.id} ${block.maxH}m`).join('; ')}` : '')
   );

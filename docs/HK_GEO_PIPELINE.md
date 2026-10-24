@@ -178,7 +178,7 @@ The full extract and the sample coast report the same shores: Victoria Harbour 1
 
 ### Boot
 
-`js/geo-source.js` always exports the Hong Kong module. `resolveRuntimeCity` returns `'hk'`. A `?city=` query and `GEO_CITY` do not switch the page. Node tool runs still accept `hk`, `hongkong`, and `hong-kong` for `GEO_CITY` when rebuilding data. The map paints `GEO.harbour.rings` in the pond colour before the land fill, so the shores cover overlap. The existing water plane stays. `buildLandmarks` returns no meshes when `frame.city` is `'hk'`, so Midtown props are not dropped on the origin. `buildCityBlocks` extrudes the Central core only (below). The Manhattan lot filler is not called.
+`js/geo-source.js` always exports the Hong Kong module. `resolveRuntimeCity` returns `'hk'`. A `?city=` query and `GEO_CITY` do not switch the page. Node tool runs still accept `hk`, `hongkong`, and `hong-kong` for `GEO_CITY` when rebuilding data. The map paints `GEO.harbour.rings` in the pond colour before the land fill, so the shores cover overlap. The existing water plane stays. `buildLandmarks` calls `buildHkLandmarks` and does not call `buildNycLandmarks`. Named Central places sit on their LandsD footprints or the Central Star Ferry pier. Victoria Peak and the Tsim Sha Tsui clock stay unbuilt. `buildCityBlocks` extrudes the Central core only (below), except the Bank of China Tower shaft, which the landmark prisms replace. The Manhattan lot filler is not called.
 
 ### Central core buildings
 
@@ -217,7 +217,7 @@ The module, compared with the Statue Square sample (7 blocks, 5 road polylines, 
 - Blocks: **53,113** footprints, **49,030** extruded (`TopHeight - BaseHeight`), **4,083** kept with no height, **17,087** specks dropped, **0** OSM building gaps, carpet **0**. `osm_buildings.json` is not part of `fetch-hk.sh`.
 - Roads: **11,692** polylines. Graph **16,084** nodes / **16,383** links / **2,298** names. **148,839** centreline pieces, **1,923** non-at-grade omitted, **392** non-carriageway skipped. OSM: **32,214** drivable ways after the graph filter, **13,308** centreline parts tagged, **3,652** gap links.
 - Shores: identical to the sample module. Harbour **13.33 km²**, Island **71.51 km²**, Kowloon **78.30 km²**, **49** piers, **4** harbour rings. Parks: **680** (the sample had none).
-- `landmarks` is `{}`. The landmark query is a name whitelist and returned one way; it is not copied onto the module. `buildLandmarks` still returns no meshes.
+- `landmarks` is `{}`. The landmark query is a name whitelist and returned one way; it is not copied onto the module. Named places are placed in `js/landmarks.js` from LandsD block names and `GEO.piers`, not from this empty object.
 - Central is inside Hong Kong Island. Admiralty is inside the island. Tsim Sha Tsui is inside Kowloon and not the island, north of the island's northernmost point (z = −1392). The harbour seed (114.1735, 22.2915) is inside the harbour ring and outside both shores, so the water stays between them. `ISLAND_BOUNDS` and `PLAY_BOUNDS` include both shores and the harbour rings.
 
 ```bash

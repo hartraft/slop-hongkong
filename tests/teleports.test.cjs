@@ -46,9 +46,9 @@ test('Hong Kong boot does not build Manhattan landmark meshes', () => {
   const boot = landmarks.indexOf('function buildLandmarks');
   const nyc = landmarks.indexOf('function buildNycLandmarks');
   const meshes = landmarks.indexOf("group.name = 'ManhattanLandmarks'");
-  assert.ok(boot > 0 && nyc > boot && meshes > nyc, 'the boot function returns before any landmark mesh');
-  assert.match(landmarks.slice(boot, nyc), /return \{ colliders: \[\] \}/);
-  assert.doesNotMatch(landmarks.slice(boot, nyc), /ManhattanLandmarks/);
+  assert.ok(boot > 0 && nyc > boot && meshes > nyc, 'the NYC landmark mesh stays inside buildNycLandmarks');
+  assert.match(landmarks.slice(boot, nyc), /return buildHkLandmarks\(scene\)/);
+  assert.doesNotMatch(landmarks.slice(boot, nyc), /ManhattanLandmarks|buildNycLandmarks/);
 });
 
 test('preset and map teleports share arrival resets and mark the resolved landing point', () => {

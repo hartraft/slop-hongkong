@@ -516,7 +516,7 @@ const HK_CORE_BBOX = Object.freeze({
 });
 const HK_NULL_HEIGHT = 'skip';
 
-function hkCoreProject(lon, lat) {
+function hkCoreScale() {
   const lat0 = GEO.frame.lat0;
   const lon0 = GEO.frame.lon0;
   const phi0 = (lat0 * Math.PI) / 180;
@@ -525,14 +525,34 @@ function hkCoreProject(lon, lat) {
   const E2 = 6.69437999014e-3;
   const nrad = A / Math.sqrt(1 - E2 * sin0 * sin0);
   const mrad = (A * (1 - E2)) / Math.pow(1 - E2 * sin0 * sin0, 1.5);
-  const kx = (Math.PI / 180) * nrad * Math.cos(phi0);
-  const ky = (Math.PI / 180) * mrad;
+  const theta = ((GEO.frame.bearingDeg || 0) * Math.PI) / 180;
+  return {
+    lat0,
+    lon0,
+    kx: (Math.PI / 180) * nrad * Math.cos(phi0),
+    ky: (Math.PI / 180) * mrad,
+    c: Math.cos(theta),
+    s: Math.sin(theta)
+  };
+}
+
+function hkCoreProject(lon, lat) {
+  const { lat0, lon0, kx, ky, c, s } = hkCoreScale();
   const east = (lon - lon0) * kx;
   const north = (lat - lat0) * ky;
-  const theta = ((GEO.frame.bearingDeg || 0) * Math.PI) / 180;
-  const c = Math.cos(theta);
-  const s = Math.sin(theta);
   return [east * c - north * s, -(east * s + north * c)];
+}
+
+function hkCoreUnproject(x, z) {
+  const { lat0, lon0, kx, ky, c, s } = hkCoreScale();
+  const east = x * c - z * s;
+  const north = -x * s - z * c;
+  return { lon: lon0 + east / kx, lat: lat0 + north / ky };
+}
+
+function hkLonLatInCore(lon, lat) {
+  return lat >= HK_CORE_BBOX.south && lat <= HK_CORE_BBOX.north
+    && lon >= HK_CORE_BBOX.west && lon <= HK_CORE_BBOX.east;
 }
 
 const HK_CORE_WORLD = (() => {
@@ -714,6 +734,268 @@ function blocksInRect(minX, maxX, minZ, maxZ) {
     }
   }
   return [...out];
+}
+
+// Named Central places. Anchors are LandsD footprints or the OSM pier already in GEO.
+// A gazetteer pin is kept only as a check against that anchor. Peak and the TST clock
+// are outside HK_CORE_BBOX and stay deferred: no mesh, and no Midtown stand-in.
+const HK_LANDMARK_CATALOG = Object.freeze([
+  {
+    id: 'two-ifc',
+    label: 'Two International Finance Centre',
+    kind: 'two-ifc',
+    landsd: { name: 'Two International Finance Centre', height: 378.5 },
+    pin: {
+      lat: 22.285291,
+      lon: 114.159294,
+      within: 8,
+      source: '22.285291 N, 114.159294 E (Google Maps 22.285232, 114.159260; Wikidata Q14226100 22°17′7.4″N 114°9′32.8″E)'
+    }
+  },
+  {
+    id: 'one-ifc',
+    label: 'One International Finance Centre',
+    kind: 'one-ifc',
+    landsd: { name: 'One International Finance Centre', height: 169.8 },
+    pin: null,
+    survey: 'LandsD BuildingNameEN One International Finance Centre, about 240 m west of Two IFC'
+  },
+  {
+    id: 'boc',
+    label: 'Bank of China Tower',
+    kind: 'boc',
+    ownsShaft: true,
+    landsd: { name: 'Bank of China Tower', height: 303.3 },
+    pin: {
+      lat: 22.27917,
+      lon: 114.16139,
+      within: 8,
+      source: 'Wikipedia Bank of China Tower, 22°16′45″N 114°09′41″E (22.27917 N, 114.16139 E). Roof 315 m, antenna 52.4 m, tip 367.4 m. LandsD plate is 303.3 m.'
+    }
+  },
+  {
+    id: 'one-exchange',
+    label: 'One Exchange Square',
+    kind: 'exchange',
+    landsd: { name: 'One Exchange Square', height: 182.4 },
+    pin: null,
+    survey: 'LandsD BuildingNameEN One Exchange Square. Wikipedia Exchange Square 22.28389 N, 114.15833 E sits on Two Exchange Square.'
+  },
+  {
+    id: 'two-exchange',
+    label: 'Two Exchange Square',
+    kind: 'exchange',
+    landsd: { name: 'Two Exchange Square', height: 182.4 },
+    pin: {
+      lat: 22.28389,
+      lon: 114.15833,
+      within: 8,
+      source: 'Wikipedia Exchange Square, 22°17′2″N 114°9′30″E (22.28389 N, 114.15833 E). Roof 188 m for towers 1 and 2.'
+    }
+  },
+  {
+    id: 'three-exchange',
+    label: 'Three Exchange Square',
+    kind: 'exchange',
+    landsd: { name: 'Three Exchange Square', height: 137.5 },
+    pin: null,
+    survey: 'LandsD BuildingNameEN Three Exchange Square, the western tower of the complex'
+  },
+  {
+    id: 'jardine',
+    label: 'Jardine House',
+    kind: 'jardine',
+    landsd: { name: 'Jardine House', height: 178.3 },
+    pin: {
+      lat: 22.28306,
+      lon: 114.15889,
+      within: 8,
+      source: 'Wikipedia Jardine House, 22°16′59″N 114°9′32″E (22.28306 N, 114.15889 E). Roof 178.5 m.'
+    }
+  },
+  {
+    id: 'cfa',
+    label: 'Court of Final Appeal',
+    kind: 'cfa',
+    landsd: { name: 'The Court of Final Appeal', height: 18.6 },
+    pin: {
+      lat: 22.280996,
+      lon: 114.160116,
+      within: 8,
+      source: 'Wikipedia Court of Final Appeal Building, 22°16′52″N 114°09′36″E (22.280996 N, 114.160116 E)'
+    }
+  },
+  {
+    id: 'star-ferry',
+    label: 'Central Star Ferry Pier',
+    kind: 'star-ferry',
+    pierName: '中環天星碼頭 Central Star Ferry Pier',
+    pin: null,
+    survey: 'OSM pier 中環天星碼頭 Central Star Ferry Pier in the committed GEO.piers extract. Wikidata Q7600710 22°17′26″N is north of the box and is not used.'
+  },
+  {
+    id: 'peak-tram',
+    label: 'Peak Tram Central Terminus',
+    kind: 'peak-tram',
+    landsd: { name: "St. John's Building", height: 91.4 },
+    pin: {
+      lat: 22.277729,
+      lon: 114.159172,
+      within: 8,
+      source: 'Wikipedia Central Terminus (Garden Road), 22°16′40″N 114°09′33″E, ground floor of St. John\'s Building'
+    }
+  },
+  {
+    id: 'victoria-peak',
+    label: 'Victoria Peak',
+    defer: true,
+    pin: { lat: 22.27556, lon: 114.14389, source: 'Wikipedia Victoria Peak, 22°16′32″N 114°8′38″E' },
+    reason: 'South and west of the Central box.'
+  },
+  {
+    id: 'peak-terminus',
+    label: 'Peak Tram upper terminus',
+    defer: true,
+    pin: { lat: 22.27104, lon: 114.14994, source: 'Wikipedia The Peak Terminus, 22°16′16″N 114°09′00″E' },
+    reason: 'South and west of the Central box.'
+  },
+  {
+    id: 'tst-clock',
+    label: 'Tsim Sha Tsui Clock Tower',
+    defer: true,
+    pin: { lat: 22.2936778, lon: 114.1693639, source: 'Wikipedia Clock Tower, 22°17′37.24″N 114°10′09.71″E' },
+    reason: 'North of the Central box.'
+  }
+]);
+
+function hkMetresToRing(poly, x, z) {
+  if (pointInPoly(poly, x, z)) return 0;
+  let best = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const ax = poly[j].x;
+    const az = poly[j].z;
+    const bx = poly[i].x;
+    const bz = poly[i].z;
+    const dx = bx - ax;
+    const dz = bz - az;
+    const length2 = dx * dx + dz * dz || 1e-9;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / length2));
+    best = Math.min(best, Math.hypot(ax + t * dx - x, az + t * dz - z));
+  }
+  return best;
+}
+
+function hkPlanCorners(poly, cx, cz) {
+  let sxx = 0;
+  let szz = 0;
+  let sxz = 0;
+  for (const p of poly) {
+    const dx = p.x - cx;
+    const dz = p.z - cz;
+    sxx += dx * dx;
+    szz += dz * dz;
+    sxz += dx * dz;
+  }
+  const ang = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  const picks = [];
+  for (const [ux, uz] of [[c, s], [-s, c]]) {
+    let maxP = null;
+    let minP = null;
+    for (const p of poly) {
+      const t = (p.x - cx) * ux + (p.z - cz) * uz;
+      if (!maxP || t > maxP.t) maxP = { p, t };
+      if (!minP || t < minP.t) minP = { p, t };
+    }
+    picks.push(maxP.p, minP.p);
+  }
+  const unique = [];
+  for (const p of picks) {
+    if (!unique.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 0.5)) unique.push(p);
+  }
+  unique.sort((a, b) => Math.atan2(a.z - cz, a.x - cx) - Math.atan2(b.z - cz, b.x - cx));
+  return unique;
+}
+
+function hkLandmarkOwnsShaft(block) {
+  if (!block) return false;
+  return HK_LANDMARK_CATALOG.some((spec) => spec.ownsShaft
+    && spec.landsd
+    && spec.landsd.name === block.name
+    && spec.landsd.height === block.height);
+}
+
+function hkResolveLandmarks() {
+  const placed = [];
+  const deferred = [];
+  for (const spec of HK_LANDMARK_CATALOG) {
+    if (spec.defer) {
+      const [x, z] = hkCoreProject(spec.pin.lon, spec.pin.lat);
+      deferred.push({
+        id: spec.id,
+        label: spec.label,
+        lat: spec.pin.lat,
+        lon: spec.pin.lon,
+        x,
+        z,
+        source: spec.pin.source,
+        reason: spec.reason,
+        inside: hkLonLatInCore(spec.pin.lon, spec.pin.lat)
+      });
+      continue;
+    }
+    let block = null;
+    let pier = null;
+    if (spec.landsd) {
+      block = BLOCKS.find((b) => b.name === spec.landsd.name && b.height === spec.landsd.height) || null;
+      if (!block) throw new Error(`LandsD landmark missing: ${spec.landsd.name}`);
+    } else {
+      pier = (GEO.piers || []).find((p) => p.name === spec.pierName) || null;
+      if (!pier) throw new Error(`OSM pier missing: ${spec.pierName}`);
+    }
+    const x = block ? block.cx : pier.cx;
+    const z = block ? block.cz : pier.cz;
+    const { lon, lat } = hkCoreUnproject(x, z);
+    const inside = hkLonLatInCore(lon, lat) && (block ? blockInHkCore(block) : true);
+    let pinMetres = null;
+    if (spec.pin) {
+      const [px, pz] = hkCoreProject(spec.pin.lon, spec.pin.lat);
+      pinMetres = block ? hkMetresToRing(block.poly, px, pz) : Math.hypot(px - x, pz - z);
+    }
+    const row = {
+      id: spec.id,
+      label: spec.label,
+      kind: spec.kind,
+      lat,
+      lon,
+      x,
+      z,
+      height: block ? block.height : null,
+      block,
+      pier,
+      pinMetres,
+      pinWithin: spec.pin ? spec.pin.within : null,
+      source: spec.pin ? spec.pin.source : spec.survey,
+      inside
+    };
+    if (!inside) {
+      deferred.push({
+        id: spec.id,
+        label: spec.label,
+        lat,
+        lon,
+        x,
+        z,
+        source: row.source,
+        reason: 'Anchor is outside the Central box.',
+        inside: false
+      });
+      continue;
+    }
+    placed.push(row);
+  }
+  return { placed, deferred };
 }
 
 // Central shop copy and bilingual street plates. Placed only on extruded frontages inside HK_CORE_WORLD.
@@ -1189,10 +1471,17 @@ export {
   BLOCKS,
   HK_CORE_BBOX,
   HK_CORE_WORLD,
+  HK_LANDMARK_CATALOG,
   HK_NULL_HEIGHT,
   blockInHkCore,
+  hkCoreProject,
+  hkCoreUnproject,
   hkFootprintHeight,
+  hkLandmarkOwnsShaft,
+  hkLonLatInCore,
   hkMassingPlan,
+  hkPlanCorners,
+  hkResolveLandmarks,
   hkScaleRing,
   hkCentralSignSites,
   CUT_Z,

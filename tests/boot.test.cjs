@@ -35,8 +35,8 @@ test('Hong Kong boot builders do not call NYC borough, bridge, or landmark meshe
   assert.match(boroughsSrc, /if \(GEO\.frame\.city !== 'hk'\) paintLandUse\(\)/);
   assert.match(boroughsSrc, /if \(GEO\.frame\.city !== 'hk'\) paintZones\(\)/);
   const landmarks = between(read('js/landmarks.js'), 'function buildLandmarks', 'function buildNycLandmarks');
-  assert.match(landmarks, /return \{ colliders: \[\] \}/);
-  assert.doesNotMatch(landmarks, /ManhattanLandmarks|Chrysler|Times Square/);
+  assert.match(landmarks, /return buildHkLandmarks\(scene\)/);
+  assert.doesNotMatch(landmarks, /buildNycLandmarks|ManhattanLandmarks|Chrysler|Times Square/);
   const blocks = between(read('js/buildings.js'), 'function buildCityBlocks', 'function buildNycCityBlocks');
   assert.match(blocks, /buildHkFootprintBlocks/);
   assert.doesNotMatch(blocks, /brownstone|waterTower|fireEscape/);
