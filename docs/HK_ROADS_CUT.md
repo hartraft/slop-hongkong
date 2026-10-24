@@ -45,7 +45,7 @@ Chater, two-way, is the double yellow. A point on it is about **x = 24, z = −6
 
 ## Residual gaps
 
-- No neon shopfront pack, no denser pedestrians, no 11-SW-8D towers, no DTM. Central frontage is a street wall, not a plaza: [HK_GROUND_FILL_CUT.md](HK_GROUND_FILL_CUT.md). Relief is still flat.
+- No denser pedestrians and no DTM. Central frontage uses LandsD individualised meshes where the sheets are fetched, and a street wall in the gaps: [HK_GLTF_CUT.md](HK_GLTF_CUT.md), [HK_GROUND_FILL_CUT.md](HK_GROUND_FILL_CUT.md). Relief is still flat.
 - Paint is class paint, not the Hong Kong transport manual: no tram fairway, no full yellow-box inventory, no worded keep-clear, no arrow legends. Junctions get a stop bar and a short run of yellow bars.
 - Parallel centrelines more than about half the combined width apart stay separate streets. A real median narrower than that becomes one asphalt surface.
 - Wetness is the shader's existing rain film and puddle mask. There are no mesh puddles, reflections unique to Central, or per-street drainage.

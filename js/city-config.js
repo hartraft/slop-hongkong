@@ -227,10 +227,12 @@ const HK_CORE_BBOX = Object.freeze({
   east: 114.170
 });
 const HK_NULL_HEIGHT = 'skip';
-// Empty keeps LandsD footprint extrudes. After tools/fetch-central-gltf-sheet.mjs,
-// open index.html?gltf=11-SW-9A (or set this to that sheet id).
-const HK_GLTF_SHEET = '';
-const HK_GLTF_CAP = 6;
+// Street faces prefer LandsD individualised sheets when hk-3d/<sheet>/manifest.json is present.
+// 11-SW-9C covers Statue Square and Des Voeux looking east. 11-SW-8D is the dense sheet on the west side of that corner.
+// A missing manifest leaves the extrude fallback in place.
+const HK_GLTF_SHEETS = Object.freeze(['11-SW-9C', '11-SW-8D']);
+const HK_GLTF_SHEET = HK_GLTF_SHEETS[0];
+const HK_GLTF_CAP = 80;
 
 function hkCoreScale() {
   const lat0 = GEO.frame.lat0;
@@ -714,31 +716,7 @@ function hkResolveLandmarks() {
   return { placed, deferred };
 }
 
-// Central shop copy and bilingual street plates. Placed only on extruded frontages inside HK_CORE_WORLD.
-const HK_SHOP_SIGNS = Object.freeze([
-  { kind: 'fascia', text: '恒生銀行', bg: '#b11226', fg: '#ffe08a' },
-  { kind: 'fascia', text: '周大福', bg: '#6e1020', fg: '#f6e2a8' },
-  { kind: 'fascia', text: '六福珠寶', bg: '#140e0c', fg: '#f3e6c0' },
-  { kind: 'fascia', text: '萬寧', bg: '#0c6b3c', fg: '#f4fff8' },
-  { kind: 'fascia', text: '屈臣氏', bg: '#0d5c45', fg: '#e7fff6' },
-  { kind: 'fascia', text: '惠康', bg: '#d01920', fg: '#ffffff' },
-  { kind: 'fascia', text: '茶餐廳', bg: '#f0d34a', fg: '#1c1408' },
-  { kind: 'fascia', text: '參茸藥材', bg: '#6a1c14', fg: '#f0d090' },
-  { kind: 'fascia', text: '鐘錶行', bg: '#10243f', fg: '#d5e4ff' },
-  { kind: 'fascia', text: '找換店', bg: '#0e3c34', fg: '#b6ffe4' },
-  { kind: 'fascia', text: '電子廣場', bg: '#07111f', fg: '#3de4ff' },
-  { kind: 'fascia', text: '中環酒樓', bg: '#8a1d2c', fg: '#ffd27a' },
-  { kind: 'blade', text: '恒生', bg: '#c4162a', fg: '#ffe7a0' },
-  { kind: 'blade', text: '金舖', bg: '#1a1208', fg: '#ffd56a' },
-  { kind: 'blade', text: '藥材', bg: '#5c1812', fg: '#f2d2a0' },
-  { kind: 'blade', text: '茶居', bg: '#e8c43a', fg: '#24180a' },
-  { kind: 'blade', text: '鐘錶', bg: '#0c1c34', fg: '#d7e8ff' },
-  { kind: 'blade', text: '珠寶', bg: '#2a0a22', fg: '#ffd0ea' },
-  { kind: 'blade', text: '酒樓', bg: '#7a1828', fg: '#ffe0a0' },
-  { kind: 'blade', text: '找換', bg: '#083830', fg: '#b8ffe6' }
-]);
-const HK_FASCIA_SIGNS = HK_SHOP_SIGNS.filter((sign) => sign.kind === 'fascia');
-const HK_BLADE_SIGNS = HK_SHOP_SIGNS.filter((sign) => sign.kind === 'blade');
+// Traditional Chinese street-name plates. Shop neon lives on the canyon face (hk-neon.js).
 const HK_STREET_PLATES = new Map([
   ['DES VOEUX ROAD CENTRAL', '德輔道中'],
   ["QUEEN'S ROAD CENTRAL", '皇后大道中'],
@@ -782,18 +760,6 @@ function hkSignHash(x, z, salt) {
   return s - Math.floor(s);
 }
 
-function hkPlateEnglish(raw) {
-  return raw
-    .replace(' ROAD CENTRAL', ' RD C')
-    .replace(' ROAD WEST', ' RD W')
-    .replace(' ROAD', ' RD')
-    .replace(' STREET', ' ST')
-    .replace(' TERRACE', ' TERR')
-    .replace(' AVENUE', ' AVE')
-    .replace(' DRIVE', ' DR')
-    .replace(' PLACE', ' PL');
-}
-
 function hkCentralSignSites() {
   const core = HK_CORE_WORLD;
   const inCore = (x, z) => x >= core.minX && x <= core.maxX && z >= core.minZ && z <= core.maxZ;
@@ -824,13 +790,9 @@ function hkCentralSignSites() {
   };
   const sites = [];
   const plateRoads = [];
-  const namedRoads = [];
-  const otherRoads = [];
   for (const road of ROADS) {
     if (road.highway) continue;
     if (HK_STREET_PLATES.has(road.raw)) plateRoads.push(road);
-    else if (road.raw) namedRoads.push(road);
-    else otherRoads.push(road);
   }
   const pushSite = (site) => {
     if (sites.length >= 3600) return false;
@@ -881,36 +843,15 @@ function hkCentralSignSites() {
     pushSite({
       kind: 'plate',
       text: label,
-      sub: hkPlateEnglish(at.road.raw),
       bg: '#f4f1e8',
       fg: '#1b1b1b',
       x: at.x,
       y,
       z: at.z,
       rotY,
-      w: 3.4,
-      h: 1.15
+      w: 2.8,
+      h: 0.78
     });
-  });
-  walk(plateRoads.concat(namedRoads, otherRoads), 16, (at) => {
-    const hash = hkSignHash(at.x, at.z, 5);
-    const blade = hash > 0.46 && at.height >= 9;
-    const copy = blade
-      ? HK_BLADE_SIGNS[Math.floor(hkSignHash(at.x, at.z, 11) * HK_BLADE_SIGNS.length) % HK_BLADE_SIGNS.length]
-      : HK_FASCIA_SIGNS[Math.floor(hkSignHash(at.x, at.z, 9) * HK_FASCIA_SIGNS.length) % HK_FASCIA_SIGNS.length];
-    const rotY = blade
-      ? Math.atan2(at.dx / at.len, at.dz / at.len)
-      : Math.atan2(-at.nx * at.side, -at.nz * at.side);
-    if (blade) {
-      const h = Math.min(6.8, Math.max(3.6, at.height * 0.42));
-      const y = Math.min(4.6 + hash * 5.5, at.height - h * 0.5 - 0.35);
-      if (y < h * 0.5 + 2.4) return;
-      pushSite({ ...copy, x: at.x, y, z: at.z, rotY, w: 1.15, h });
-      return;
-    }
-    const y = 3.25 + (hash % 0.35);
-    if (y + 0.6 > at.height) return;
-    pushSite({ ...copy, x: at.x, y, z: at.z, rotY, w: 4.8 + hash * 2.2, h: 1.05 });
   });
   return sites;
 }
@@ -967,6 +908,27 @@ const ISLAND_BOUNDS = (() => {
   return { minX, maxX, minZ, maxZ, sidewalkHeight: 0.22, waterLevel: -2.2 };
 })();
 const PLAY_BOUNDS = ISLAND_BOUNDS;
+
+// Opaque shopfront. Two curtain storeys above the sidewalk. Glass starts at this world Y.
+const HK_RETAIL_BELT = ISLAND_BOUNDS.sidewalkHeight + HK_CURTAIN_STOREY * 2;
+
+// Split a vertical extrusion so the street base is retail and glass starts at the belt.
+// `ground` is the world Y of building y0 = 0 (the sidewalk the extrude sits on).
+function hkRetailSlices(y0, h, style, ground = ISLAND_BOUNDS.sidewalkHeight) {
+  if (!(h > 0)) return [];
+  const bottom = ground + y0;
+  const top = bottom + h;
+  const cut = HK_RETAIL_BELT;
+  if (bottom >= cut - 0.05) return [{ style, y0, h }];
+  if (top <= cut + 0.05) return [{ style: 'retail', y0, h }];
+  const beltH = cut - bottom;
+  const glassH = h - beltH;
+  if (beltH < 0.4 || glassH < 0.4) return [{ style: top <= cut ? 'retail' : style, y0, h }];
+  return [
+    { style: 'retail', y0, h: beltH },
+    { style, y0: y0 + beltH, h: glassH }
+  ];
+}
 
 const LANDMARK_BLOCKS = new Set();
 
@@ -1035,11 +997,14 @@ export {
   HK_LANDMARK_CATALOG,
   HK_NULL_HEIGHT,
   HK_GLTF_SHEET,
+  HK_GLTF_SHEETS,
   HK_GLTF_CAP,
   blockInHkCore,
   hkCoreProject,
   hkCoreUnproject,
   hkFootprintHeight,
+  HK_RETAIL_BELT,
+  hkRetailSlices,
   hkLandmarkOwnsShaft,
   hkLonLatInCore,
   hkMassingPlan,

@@ -8,6 +8,23 @@ import { carriagewayWidth, HK_CURB_W, HK_WALK_W, segmentFrame } from './hk-road-
 export const HK_CANYON_DEPTH = 12;
 export const HK_CANYON_HEIGHT = 18;
 export const HK_CANYON_REACH = 22;
+
+// Same footprint set the street-wall mesh uses. Neon placement calls this so a
+// sign cannot drift onto a lot the canyon builder skipped.
+export function hkCanyonBuildings(blocks, core) {
+  const buildings = [];
+  if (!core) return buildings;
+  const minX = core.minX - 40;
+  const maxX = core.maxX + 40;
+  const minZ = core.minZ - 40;
+  const maxZ = core.maxZ + 40;
+  for (const b of blocks || []) {
+    if (!b || b.park > 0.6 || b.median || !(b.height > 0) || !b.poly || b.poly.length < 3) continue;
+    if (b.maxX < minX || b.minX > maxX || b.maxZ < minZ || b.minZ > maxZ) continue;
+    buildings.push(b);
+  }
+  return buildings;
+}
 const MIN_LEN = 5.5;
 const END_GAP = 1.15;
 const BITE = 0.3;
@@ -155,6 +172,14 @@ function frontage(seg, sign, buildings, asphalt, island, walk, curb, depth, reac
       yaw: seg.yaw,
       depth: candidate,
       len,
+      side: sign,
+      rx: seg.rx,
+      rz: seg.rz,
+      dx: seg.dx,
+      dz: seg.dz,
+      raw: seg.raw || '',
+      highway: !!seg.highway,
+      narrow: seg.half < 4.5,
       ...box
     };
   }
@@ -190,7 +215,9 @@ export function planHkStreetCanyon({
         az: a.z,
         bx: b.x,
         bz: b.z,
-        half: width * 0.5
+        half: width * 0.5,
+        raw: road.raw || '',
+        highway: !!road.highway
       });
     }
   }
@@ -215,4 +242,56 @@ export function planHkStreetCanyon({
     }
   }
   return { walls };
+}
+
+// Drop the parts of an invented street wall that sit on a real LandsD mesh.
+// `meshes` are world AABBs. A sample on the wall centreline inside a mesh (plus margin) is covered.
+export function clipCanyonWalls(walls, meshes, { margin = 3, sample = 4, minLen = 3.2 } = {}) {
+  if (!meshes?.length) return (walls || []).slice();
+  const out = [];
+  for (const wall of walls || []) {
+    if (!wall || !Number.isFinite(wall.dx) || !Number.isFinite(wall.dz) || !(wall.len > 0)) {
+      if (wall) out.push(wall);
+      continue;
+    }
+    const half = wall.len * 0.5;
+    const steps = Math.max(1, Math.ceil(wall.len / sample));
+    const dt = wall.len / steps;
+    const covered = [];
+    for (let i = 0; i < steps; i++) {
+      const t = -half + (i + 0.5) * dt;
+      const x = wall.x + wall.dx * t;
+      const z = wall.z + wall.dz * t;
+      covered.push(meshes.some((mesh) => (
+        x >= mesh.minX - margin && x <= mesh.maxX + margin
+        && z >= mesh.minZ - margin && z <= mesh.maxZ + margin
+      )));
+    }
+    let i = 0;
+    while (i < steps) {
+      if (covered[i]) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < steps && !covered[j]) j++;
+      const t0 = -half + i * dt;
+      const t1 = -half + j * dt;
+      const len = t1 - t0;
+      if (len >= minLen) {
+        const mid = (t0 + t1) * 0.5;
+        const x = wall.x + wall.dx * mid;
+        const z = wall.z + wall.dz * mid;
+        out.push({
+          ...wall,
+          x,
+          z,
+          len,
+          ...obbOf(x, z, wall.yaw, wall.depth, len)
+        });
+      }
+      i = j;
+    }
+  }
+  return out;
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { BLOCKS, HK_GLTF_CAP, HK_GLTF_SHEET, ISLAND_BOUNDS } from './city-config.js';
+import { BLOCKS, HK_GLTF_CAP, HK_GLTF_SHEET, HK_GLTF_SHEETS, ISLAND_BOUNDS } from './city-config.js';
 import {
   formatGltfLog,
   hiddenExtrudeIds,
@@ -9,7 +9,7 @@ import {
   resolveHkGltfRequest
 } from './hk-gltf-frame.js';
 
-// One LandsD individualised sheet, capped. The default page does not fetch it.
+// LandsD individualised sheets for Central street faces. A missing manifest leaves the extrudes.
 // GLTFLoader is a static import. index.html pins that one addon file: the jsDelivr
 // `@dev` alias currently answers 403 for GLTFLoader.js ("package size exceeded").
 
@@ -56,38 +56,91 @@ function bakeMesh(mesh) {
   return geo;
 }
 
+function limitPhoto(tex, maxEdge = 2048) {
+  const img = tex?.image;
+  const w = img?.width || 0;
+  const h = img?.height || 0;
+  if (!w || !h || (w <= maxEdge && h <= maxEdge)) return;
+  if (typeof document === 'undefined') return;
+  const scale = maxEdge / Math.max(w, h);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(w * scale));
+  canvas.height = Math.max(1, Math.round(h * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  tex.image = canvas;
+  tex.needsUpdate = true;
+}
+
 function tintMaps(material) {
   const list = Array.isArray(material) ? material : [material];
   for (const mat of list) {
-    if (mat?.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+    if (!mat?.map) continue;
+    mat.map.colorSpace = THREE.SRGBColorSpace;
+    limitPhoto(mat.map);
   }
 }
 
+async function readSheetManifest(sheet) {
+  const manifestUrl = `./hk-3d/${sheet}/manifest.json`;
+  const res = await fetch(manifestUrl);
+  if (!res.ok) throw new Error(String(res.status));
+  const manifest = await res.json();
+  const id = manifest.sheet || sheet;
+  const buildings = (Array.isArray(manifest.buildings) ? manifest.buildings : []).map((entry) => ({
+    ...entry,
+    sheet: entry.sheet || id
+  }));
+  return { ...manifest, sheet: id, buildings };
+}
+
 export async function prepareHkGltfSheet(href) {
-  const request = resolveHkGltfRequest(href, { configured: HK_GLTF_SHEET, cap: HK_GLTF_CAP });
+  const request = resolveHkGltfRequest(href, {
+    configured: HK_GLTF_SHEET,
+    sheets: HK_GLTF_SHEETS,
+    cap: HK_GLTF_CAP
+  });
   if (!request) {
-    console.info('[gltf] HK_GLTF_SHEET off; LandsD extrudes cover Central');
+    console.info('[gltf] no LandsD sheet configured; extrudes cover Central');
     return null;
   }
-  const manifestUrl = `./hk-3d/${request.sheet}/manifest.json`;
-  let manifest;
-  try {
-    const res = await fetch(manifestUrl);
-    if (!res.ok) throw new Error(String(res.status));
-    manifest = await res.json();
-  } catch (err) {
-    console.warn(`[gltf] sheet ${request.sheet} manifest not loaded (${err.message}); extrudes stay`);
+  const buildings = [];
+  const loadedSheets = [];
+  const reasons = [];
+  for (const sheet of request.sheets) {
+    try {
+      const manifest = await readSheetManifest(sheet);
+      buildings.push(...manifest.buildings);
+      loadedSheets.push(manifest.sheet);
+      if (manifest.reason) reasons.push(manifest.reason);
+      const count = manifest.counts || {};
+      console.info(
+        `[gltf] manifest ${manifest.sheet} buildings ${manifest.buildings.length}` +
+        (count.buildingFiles != null ? ` sheet files ${count.buildingFiles} core ${count.overlap ?? '?'}` : '')
+      );
+    } catch (err) {
+      console.warn(`[gltf] sheet ${sheet} manifest not loaded (${err.message})`);
+    }
+  }
+  if (!loadedSheets.length) {
+    console.warn('[gltf] no individualised manifest; extrudes stay');
     return null;
   }
-  const plan = planGltfManifest(manifest, { cap: request.cap });
+  const plan = planGltfManifest({
+    sheet: loadedSheets.join('+'),
+    reason: reasons.join(' | '),
+    buildings
+  }, { cap: request.cap });
   const hidden = hiddenExtrudeIds(BLOCKS, plan.selected);
   return {
     ...plan,
-    sheet: manifest.sheet || request.sheet,
+    sheet: loadedSheets.join('+'),
+    sheets: loadedSheets,
     hiddenIds: new Set(hidden),
     selected: plan.selected.map((entry) => ({
       ...entry,
-      url: `./hk-3d/${manifest.sheet || request.sheet}/${entry.file}`
+      url: `./hk-3d/${entry.sheet}/${entry.file}`
     }))
   };
 }

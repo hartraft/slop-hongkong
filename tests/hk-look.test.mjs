@@ -8,8 +8,10 @@ import {
   HK_CORE_WORLD,
   blockInHkCore,
   hkCentralSignSites,
+  HK_RETAIL_BELT,
   hkFootprintHeight,
   hkMassingPlan,
+  hkRetailSlices,
   hkScaleRing
 } from '../js/city-config.js';
 
@@ -40,6 +42,22 @@ test('podium and tower keep the LandsD height and only appear on wide plates', (
   assert.ok(wide.parts[1].scale < 1 && wide.parts[1].scale >= 0.7);
   assert.equal(wide.parts[1].y0, wide.parts[0].h);
   assert.ok(Math.abs(wide.parts[0].h + wide.parts[1].h - 120) < 1e-6);
+});
+
+test('the street base is an opaque retail belt and glass starts above it', () => {
+  const low = hkRetailSlices(0, 6, 'podium');
+  assert.equal(low.length, 1);
+  assert.equal(low[0].style, 'retail');
+  const tall = hkRetailSlices(0, 40, 'tower0');
+  assert.equal(tall.length, 2);
+  assert.equal(tall[0].style, 'retail');
+  assert.equal(tall[1].style, 'tower0');
+  assert.ok(Math.abs(tall[0].h - (HK_RETAIL_BELT - 0.22)) < 1e-9);
+  assert.ok(Math.abs(tall[0].h + tall[1].h - 40) < 1e-9);
+  assert.ok(tall[1].y0 >= HK_RETAIL_BELT - 0.22 - 1e-9);
+  const above = hkRetailSlices(tall[1].y0, tall[1].h, 'tower1');
+  assert.equal(above.length, 1);
+  assert.equal(above[0].style, 'tower1');
 });
 
 test('Central names use podium-tower glass plans and null height stays unbuilt', () => {
@@ -92,27 +110,20 @@ test('Central names use podium-tower glass plans and null height stays unbuilt',
   assert.ok(podiumTowers >= 120 && podiumTowers < 500, `podium+tower ${podiumTowers}`);
 });
 
-test('Central sign sites stay inside the box and use Hong Kong copy', () => {
+test('Central street plates stay inside the box and use Traditional Chinese', () => {
   const sites = hkCentralSignSites();
-  assert.ok(sites.length > 800 && sites.length <= 3600, `signs ${sites.length}`);
+  assert.ok(sites.length > 40 && sites.length < 400, `plates ${sites.length}`);
   const texts = new Set(sites.map((site) => site.text));
   assert.ok(texts.has('德輔道中'));
   assert.ok(texts.has('皇后大道中'));
   assert.ok(texts.has('干諾道中'));
-  assert.ok(texts.has('恒生銀行'));
-  assert.ok(texts.has('茶餐廳'));
-  assert.equal(sites.some((site) => /Times Square|5TH AVE|Midtown|Broadway|42 ST/i.test(`${site.text} ${site.sub || ''}`)), false);
-  let blades = 0;
-  let plates = 0;
+  assert.equal(sites.some((site) => /Times Square|5TH AVE|Midtown|Broadway|42 ST|[A-Za-z]/i.test(`${site.text} ${site.sub || ''}`)), false);
   for (const site of sites) {
+    assert.equal(site.kind, 'plate');
     assert.ok(site.x >= HK_CORE_WORLD.minX && site.x <= HK_CORE_WORLD.maxX);
     assert.ok(site.z >= HK_CORE_WORLD.minZ && site.z <= HK_CORE_WORLD.maxZ);
     assert.ok(site.y > 2 && site.y < 80);
-    if (site.kind === 'blade') blades++;
-    if (site.kind === 'plate') plates++;
   }
-  assert.ok(blades > 200, `blades ${blades}`);
-  assert.ok(plates > 40, `plates ${plates}`);
 });
 
 test('the boot path extrudes curtain-wall glass and Central street signs', () => {
@@ -124,6 +135,9 @@ test('the boot path extrudes curtain-wall glass and Central street signs', () =>
   assert.match(body, /hkMassingPlan/);
   assert.match(body, /HK_NULL_HEIGHT/);
   assert.match(body, /createCurtainWallMaterial/);
+  assert.match(body, /createRetailPodiumMaterial/);
+  assert.match(body, /hkRetailSlices/);
+  assert.match(body, /HkRetailPodium/);
   assert.doesNotMatch(body, /BoxGeometry|InstancedMesh|: 12\b|populateBlock/);
   const boot = buildings.slice(buildings.indexOf('function buildCityBlocks'));
   assert.match(boot, /return buildHkFootprintBlocks\(scene, gltfPlan\)/);
@@ -132,8 +146,9 @@ test('the boot path extrudes curtain-wall glass and Central street signs', () =>
   const streets = readFileSync(path.join(root, 'js/street-details.js'), 'utf8');
   const live = streets.slice(streets.indexOf('function buildStreetDetails'));
   assert.match(live, /hkCentralSignSites/);
+  assert.match(live, /planHkCanyonNeon/);
   assert.match(live, /HongKongStreetDetails/);
   const main = readFileSync(path.join(root, 'js/main.js'), 'utf8');
-  assert.match(main, /buildStreetDetails\(scene\)/);
+  assert.match(main, /buildStreetDetails\(scene, gltfPlan\)/);
   assert.match(main, /buildCityBlocks\(scene, gltfPlan\)/);
 });

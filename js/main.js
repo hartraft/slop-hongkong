@@ -75,21 +75,21 @@ async function initApp() {
   }
 
   // 3. Hong Kong coast, footprint blocks, empty landmark slots, street details, and traffic
-  const cityGrid = buildCityGrid(scene);
+  const gltfPlan = await prepareHkGltfSheet(window.location.href);
+  if (loadingStatus && gltfPlan) loadingStatus.textContent = '正在載入地政總署單體建築模型…';
+  const cityGrid = buildCityGrid(scene, gltfPlan);
   markInit('cityGrid');
   const boroughs = buildBoroughs(scene, { sidewalks: cityGrid.sidewalks });
   markInit('boroughs');
   const { colliders: landmarkColliders } = buildLandmarks(scene);
   markInit('landmarks');
-  const gltfPlan = await prepareHkGltfSheet(window.location.href);
-  if (loadingStatus && gltfPlan) loadingStatus.textContent = '正在載入地政總署單體建築模型…';
   const cityBlocks = buildCityBlocks(scene, gltfPlan);
   markInit('blocks');
   const gltfBuildings = await mountHkGltfBuildings(scene, gltfPlan);
   markInit('gltf');
   const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...gltfBuildings.colliders, ...boroughs.colliders, ...(cityGrid.colliders || [])];
 
-  const streetDetails = buildStreetDetails(scene);
+  const streetDetails = buildStreetDetails(scene, gltfPlan);
   markInit('streetDetails');
   // Buildings turned along non-grid streets have oriented colliders whose world bounds reach past their lots: they stay
   // inside the property line anyway, so the road network (lanes & sidewalks) doesn't need them
@@ -118,6 +118,18 @@ async function initApp() {
       controllerManager.setMode(Object.hasOwn(controllerManager.entities, saved.activeMode) ? saved.activeMode : 'car');
     }
   } catch { /* Missing or unavailable storage does not prevent playing. */ }
+
+  // Street proof: index.html?at=-1.4,29.3,1.29 stands on Des Voeux looking east.
+  try {
+    const at = new URL(window.location.href).searchParams.get('at');
+    if (at) {
+      const [x, z, heading] = at.split(',').map(Number);
+      if ([x, z, heading].every(Number.isFinite)) {
+        controllerManager.setMode('person');
+        controllerManager.teleportActiveTo(x, z, heading);
+      }
+    }
+  } catch { /* A bad query leaves the Central spawn. */ }
 
   function savePlayerState() {
     try {

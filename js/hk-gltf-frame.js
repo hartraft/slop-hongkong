@@ -2,6 +2,7 @@ import {
   HK_CORE_WORLD,
   HK_GLTF_CAP,
   HK_GLTF_SHEET,
+  HK_GLTF_SHEETS,
   ISLAND_BOUNDS,
   blockInHkCore,
   hkCoreProject,
@@ -26,7 +27,7 @@ const A0 = 1 - E2_HK / 4 - (3 * E4_HK) / 64;
 const A2 = (3 / 8) * (E2_HK + E4_HK / 4);
 const A4 = (15 * E4_HK) / 256;
 const SHEET_RE = /^[0-9]{1,2}-[NS][EW]-[0-9]{1,2}[A-D]$/i;
-const HK_GLTF_MIN_SPAN = 12;
+const HK_GLTF_MIN_SPAN = 8;
 
 function meridian(phi) {
   return A_HK * (A0 * phi - A2 * Math.sin(2 * phi) + A4 * Math.sin(4 * phi));
@@ -168,7 +169,6 @@ export function isBuildingGltf(filePath) {
 
 export function assertSheetAllowed(sheet) {
   const id = String(sheet || '').trim().toUpperCase();
-  if (id === '11-SW-8D') throw new Error('11-SW-8D is about 2.5 GB and is out of scope for this cut');
   if (!SHEET_RE.test(id)) throw new Error(`bad sheet ${sheet}`);
   return id;
 }
@@ -254,7 +254,7 @@ export function hiddenExtrudeIds(blocks, meshes, { margin = 2 } = {}) {
   return ids;
 }
 
-export function resolveHkGltfRequest(href, { configured = HK_GLTF_SHEET, cap = HK_GLTF_CAP } = {}) {
+export function resolveHkGltfRequest(href, { configured = HK_GLTF_SHEET, sheets = HK_GLTF_SHEETS, cap = HK_GLTF_CAP } = {}) {
   let sheetQuery = '';
   let capQuery = '';
   try {
@@ -264,14 +264,23 @@ export function resolveHkGltfRequest(href, { configured = HK_GLTF_SHEET, cap = H
   } catch {
     sheetQuery = '';
   }
-  const sheet = (sheetQuery || configured || '').trim();
-  if (!sheet || !SHEET_RE.test(sheet)) return null;
   let n = cap;
   if (capQuery) {
     const parsed = Number(capQuery);
     if (Number.isFinite(parsed) && parsed > 0) n = parsed;
   }
-  return { sheet: sheet.toUpperCase(), cap: Math.min(24, Math.floor(n)) };
+  const clamped = Math.min(800, Math.floor(n));
+  const query = sheetQuery.trim();
+  if (query) {
+    if (!SHEET_RE.test(query)) return null;
+    const sheet = query.toUpperCase();
+    return { sheet, sheets: [sheet], cap: clamped };
+  }
+  const list = (Array.isArray(sheets) && sheets.length ? sheets : (configured ? [configured] : []))
+    .map((id) => String(id || '').trim().toUpperCase())
+    .filter((id) => SHEET_RE.test(id));
+  if (!list.length) return null;
+  return { sheet: list[0], sheets: list, cap: clamped };
 }
 
 export function formatGltfLog(info) {

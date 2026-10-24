@@ -179,6 +179,7 @@ const canyonSkyAONode = Fn(() => {
 
 // Material caches to prevent duplicate WebGPU WGSL shader compilation across blocks & landmarks
 const _curtainWallCache = new Map();
+let _retailPodium = null;
 
 // Camera-independent facade frame: the view/world normal round trip can change the dominant axis on 45-degree
 // walls. Resolve near-ties in the vertex shader and keep that choice flat across each face.
@@ -1894,10 +1895,60 @@ function createCarFlareMaterial() {
   return mat;
 }
 
+/**
+ * Opaque shopfront for extrude and canyon gaps that have no LandsD mesh yet.
+ * A granite plinth meets the pavement. The shop mouth starts above that plinth.
+ * Punched windows, if any, are only in the upper storey of the belt.
+ */
+function createRetailPodiumMaterial() {
+  if (_retailPodium) return _retailPodium;
+  const mat = new THREE.MeshStandardNodeMaterial({
+    roughness: 0.9,
+    metalness: 0.02
+  });
+  mat.name = 'hkRetailPodium';
+  const shade = Fn(() => {
+    const y = positionWorld.y;
+    const n = normalWorld;
+    const facing = step(abs(n.z), abs(n.x));
+    const along = mix(positionWorld.z, positionWorld.x, facing);
+    const bay = fract(along.mul(0.227));
+    const pier = smoothstep(0.1, 0.16, bay).mul(float(1.0).sub(smoothstep(0.84, 0.9, bay)));
+    const wall = float(1.0).sub(step(0.72, abs(n.y)));
+    const plinth = float(1.0).sub(smoothstep(1.05, 1.22, y));
+    const shop = smoothstep(1.12, 1.28, y).mul(float(1.0).sub(smoothstep(3.25, 3.45, y))).mul(pier).mul(wall);
+    const fascia = smoothstep(3.25, 3.45, y).mul(float(1.0).sub(smoothstep(4.5, 4.7, y))).mul(wall);
+    const hole = smoothstep(0.3, 0.38, bay).mul(float(1.0).sub(smoothstep(0.62, 0.7, bay)));
+    const punched = smoothstep(5.15, 5.35, y).mul(float(1.0).sub(smoothstep(7.05, 7.25, y))).mul(hole).mul(wall);
+    const granite = vec3(0.34, 0.33, 0.31);
+    const stone = vec3(0.55, 0.5, 0.45);
+    const tile = vec3(0.78, 0.71, 0.58);
+    const mouth = vec3(0.07, 0.06, 0.055);
+    const pane = vec3(0.16, 0.24, 0.28);
+    return mix(mix(mix(mix(stone, granite, plinth), mouth, shop), tile, fascia), pane, punched);
+  });
+  mat.colorNode = shade();
+  mat.emissiveNode = Fn(() => {
+    const y = positionWorld.y;
+    const n = normalWorld;
+    const facing = step(abs(n.z), abs(n.x));
+    const along = mix(positionWorld.z, positionWorld.x, facing);
+    const bay = fract(along.mul(0.227));
+    const pier = smoothstep(0.1, 0.16, bay).mul(float(1.0).sub(smoothstep(0.84, 0.9, bay)));
+    const wall = float(1.0).sub(step(0.72, abs(n.y)));
+    const shop = smoothstep(1.35, 1.55, y).mul(float(1.0).sub(smoothstep(3.05, 3.2, y))).mul(pier).mul(wall);
+    const night = smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow);
+    return vec3(1.0, 0.72, 0.38).mul(shop).mul(night).mul(0.45);
+  })();
+  _retailPodium = mat;
+  return mat;
+}
+
 export {
   cityUniforms,
   WALL_KINDS,
   createCurtainWallMaterial,
+  createRetailPodiumMaterial,
   createCarPaintMaterial,
   createTreeMaterial,
   createParkPavingMaterial,

@@ -7,18 +7,20 @@ import {
   KOWLOON_COASTLINE,
   BLOCKS,
   ROADS,
-  HK_CORE_WORLD
+  HK_CORE_WORLD,
+  HK_RETAIL_BELT
 } from './city-config.js';
 import {
   createCurbMaterial,
   createCurtainWallMaterial,
   createLaneStripeMaterial,
+  createRetailPodiumMaterial,
   createRoadSurfaceMaterial,
   createSidewalkMaterial,
   createWaterMaterial
 } from './tsl-materials.js';
 import { GEO } from './geo-source.js';
-import { HK_CANYON_HEIGHT, planHkStreetCanyon } from './hk-ground-fill.js';
+import { HK_CANYON_HEIGHT, clipCanyonWalls, hkCanyonBuildings, planHkStreetCanyon } from './hk-ground-fill.js';
 import { planHkRoadDeck } from './hk-road-deck.js';
 
 // Hong Kong coast, Victoria Harbour, and the centreline asphalt deck. Lots stay in buildings.js.
@@ -197,26 +199,21 @@ function createFlatPolygonMesh(pts, y, material, receiveShadow = true) {
   return mesh;
 }
 
-function buildCityGrid(scene) {
-  return buildHkCityGrid(scene);
+function buildCityGrid(scene, gltfPlan = null) {
+  return buildHkCityGrid(scene, gltfPlan);
 }
 
 // Podiums hard against the sidewalk. A LandsD footprint within reach is met;
 // a side with none still gets a street wall. The harbour ring is not walled.
-function buildHkStreetCanyon(group) {
-  const buildings = [];
-  for (const b of BLOCKS) {
-    if (b.park > 0.6 || b.median || !(b.height > 0) || !b.poly || b.poly.length < 3) continue;
-    if (b.maxX < HK_CORE_WORLD.minX - 40 || b.minX > HK_CORE_WORLD.maxX + 40) continue;
-    if (b.maxZ < HK_CORE_WORLD.minZ - 40 || b.minZ > HK_CORE_WORLD.maxZ + 40) continue;
-    buildings.push(b);
-  }
+function buildHkStreetCanyon(group, gltfPlan = null) {
   const plan = planHkStreetCanyon({
     roads: ROADS,
-    buildings,
+    buildings: hkCanyonBuildings(BLOCKS, HK_CORE_WORLD),
     core: HK_CORE_WORLD,
     island: HONG_KONG_ISLAND_COASTLINE
   });
+  const walls = clipCanyonWalls(plan.walls, gltfPlan?.selected || []);
+  const retailMat = createRetailPodiumMaterial();
   const wallMat = createCurtainWallMaterial({
     glassTint: 0x1c3a45,
     frameTint: 0x9aa6b0,
@@ -229,30 +226,27 @@ function buildHkStreetCanyon(group) {
     seed: 2.4,
     boxLocal: false
   });
-  wallMat.name = 'hkCanyonPodium';
-  addHkRibbonMesh(
-    group,
-    wallMat,
-    plan.walls.map((wall) => ({ x: wall.x, z: wall.z, yaw: wall.yaw, w: wall.depth, len: wall.len })),
-    0.16,
-    HK_CANYON_HEIGHT,
-    'HkCentralStreetWalls',
-    1
-  );
-  console.info(`[ground] Central street walls ${plan.walls.length}`);
-  return plan.walls.map((wall) => ({
+  wallMat.name = 'hkCanyonGlass';
+  const ribbons = walls.map((wall) => ({ x: wall.x, z: wall.z, yaw: wall.yaw, w: wall.depth, len: wall.len }));
+  const baseY = 0.16;
+  const baseH = Math.max(0.4, HK_RETAIL_BELT - baseY);
+  const glassH = Math.max(0.4, HK_CANYON_HEIGHT - baseH);
+  addHkRibbonMesh(group, retailMat, ribbons, baseY, baseH, 'HkCentralStreetWalls', 1);
+  addHkRibbonMesh(group, wallMat, ribbons, HK_RETAIL_BELT, glassH, 'HkCentralStreetWallsGlass', 1);
+  console.info(`[ground] Central street walls ${plan.walls.length} kept ${walls.length} after LandsD overlap`);
+  return walls.map((wall) => ({
     minX: wall.minX,
     maxX: wall.maxX,
     minZ: wall.minZ,
     maxZ: wall.maxZ,
-    maxY: 0.16 + HK_CANYON_HEIGHT,
+    maxY: baseY + HK_CANYON_HEIGHT,
     obb: wall.obb
   }));
 }
 
 // Coast rings become land. Carriageways are an asphalt deck on GEO.roads.
 // Victoria Harbour water uses PLAY_BOUNDS (Island + Kowloon + harbour).
-function buildHkCityGrid(scene) {
+function buildHkCityGrid(scene, gltfPlan = null) {
   const group = new THREE.Group();
   group.name = 'HongKongCityGrid';
 
@@ -299,7 +293,7 @@ function buildHkCityGrid(scene) {
 
   const roadMat = createRoadSurfaceMaterial();
   const sidewalkMat = createSidewalkMaterial();
-  const canyonColliders = buildHkStreetCanyon(group);
+  const canyonColliders = buildHkStreetCanyon(group, gltfPlan);
   buildHkRoadRibbons(group, roadMat, sidewalkMat);
   buildHkPierDecks(group);
 

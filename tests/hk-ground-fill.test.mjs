@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HK_CORE_WORLD, HONG_KONG_ISLAND_COASTLINE, ROADS, BLOCKS, blockInHkCore, hkFootprintHeight } from '../js/city-config.js';
-import { planHkStreetCanyon, pointInRing } from '../js/hk-ground-fill.js';
+import { clipCanyonWalls, planHkStreetCanyon, pointInRing } from '../js/hk-ground-fill.js';
 
 function contains(wall, x, z) {
   const dx = x - wall.obb.cx;
@@ -91,4 +91,30 @@ test('Central walls crowd Des Voeux and stay off the harbour', () => {
     assert.ok(wall.depth >= 1.5 && wall.depth <= 18.5);
     assert.ok(wall.len >= 3);
   }
+});
+
+test('a LandsD footprint hides the canyon stretch it covers and leaves the gap', () => {
+  const wall = {
+    x: 0,
+    z: 0,
+    yaw: 0,
+    depth: 10,
+    len: 40,
+    side: 1,
+    rx: -1,
+    rz: 0,
+    dx: 0,
+    dz: 1,
+    raw: 'DES VOEUX ROAD CENTRAL',
+    highway: false,
+    narrow: false
+  };
+  const meshes = [{ minX: -8, maxX: 8, minZ: -6, maxZ: 6 }];
+  const pieces = clipCanyonWalls([wall], meshes, { sample: 4, margin: 1, minLen: 3.2 });
+  assert.equal(pieces.length, 2);
+  assert.ok(pieces.every((piece) => Math.abs(piece.z) > 6));
+  assert.ok(pieces.every((piece) => piece.len < 20 && piece.len >= 3.2));
+  assert.equal(clipCanyonWalls([wall], []).length, 1);
+  const covered = clipCanyonWalls([wall], [{ minX: -30, maxX: 30, minZ: -30, maxZ: 30 }]);
+  assert.equal(covered.length, 0);
 });

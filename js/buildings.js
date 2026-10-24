@@ -9,15 +9,16 @@ import {
   hkFootprintHeight,
   hkLandmarkOwnsShaft,
   hkMassingPlan,
+  hkRetailSlices,
   hkScaleRing
 } from './city-config.js';
-import { createCurtainWallMaterial } from './tsl-materials.js';
+import { createCurtainWallMaterial, createRetailPodiumMaterial } from './tsl-materials.js';
 
 // LandsD footprint ring extruded to TopHeight − BaseHeight. Same shape path as
 // createExtrudedPolygonMesh in city-grid.js: outline in (x, −z), depth along Y.
 // Only the Central core is built. A null height is skipped (HK_NULL_HEIGHT).
 // Where the plate is wide enough, a full-footprint podium and a set-back tower
-// share that recorded height. Every live face is curtain-wall glass.
+// share that recorded height. The street base is an opaque shopfront. Glass starts above that belt.
 const HK_EXTRUDE_BATCH = 400;
 
 function ringForExtrude(poly) {
@@ -108,6 +109,16 @@ function hkCurtainMaterials() {
   };
 }
 
+function withRetailBelt(parts) {
+  const sliced = [];
+  for (const part of parts) {
+    for (const slice of hkRetailSlices(part.y0, part.h, part.style)) {
+      sliced.push({ ...part, ...slice });
+    }
+  }
+  return sliced;
+}
+
 function tryExtrudeHk(pts, height, lift) {
   let geo = null;
   try {
@@ -127,12 +138,13 @@ function buildHkFootprintBlocks(scene, gltfPlan = null) {
   group.name = 'HongKongCityBlocks';
   const colliders = [];
   const allBlocks = [];
-  const glass = hkCurtainMaterials();
+  const glass = { ...hkCurtainMaterials(), retail: createRetailPodiumMaterial() };
   const batches = {
     podium: [],
     tower0: [],
     tower1: [],
-    tower2: []
+    tower2: [],
+    retail: []
   };
   let extruded = 0;
   let podiumTowers = 0;
@@ -151,7 +163,7 @@ function buildHkFootprintBlocks(scene, gltfPlan = null) {
     if (!merged) return;
     merged.computeBoundingSphere();
     const mesh = new THREE.Mesh(merged, glass[key]);
-    mesh.name = 'HkCurtainWall';
+    mesh.name = key === 'retail' ? 'HkRetailPodium' : 'HkCurtainWall';
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -192,12 +204,13 @@ function buildHkFootprintBlocks(scene, gltfPlan = null) {
       skippedDegenerate++;
       continue;
     }
-    let pieces = plan.parts.map((part) => ({
+    let pieces = withRetailBelt(plan.parts.map((part) => ({
       ...part,
       ring: part.scale < 1 ? scaleHkRing(pts, part.scale) : pts
-    }));
+    })));
     if (pieces.some((part) => !part.ring)) {
-      pieces = [{ role: 'shaft', scale: 1, y0: 0, h: plan.height, style: h < 32 ? 'podium' : plan.parts[plan.parts.length - 1].style, ring: pts }];
+      const shaftStyle = h < 32 ? 'podium' : plan.parts[plan.parts.length - 1].style;
+      pieces = withRetailBelt([{ role: 'shaft', scale: 1, y0: 0, h: plan.height, style: shaftStyle, ring: pts }]);
     }
     const geos = [];
     let failed = false;
@@ -212,17 +225,26 @@ function buildHkFootprintBlocks(scene, gltfPlan = null) {
     if (failed) {
       for (const item of geos) item.geo.dispose();
       const shaftStyle = h < 32 ? 'podium' : 'tower0';
-      const shaft = tryExtrudeHk(pts, h, 0);
-      if (!shaft) {
+      geos.length = 0;
+      pieces = [];
+      let shaftFailed = false;
+      for (const slice of hkRetailSlices(0, h, shaftStyle)) {
+        const shaft = tryExtrudeHk(pts, slice.h, slice.y0);
+        if (!shaft) {
+          shaftFailed = true;
+          break;
+        }
+        geos.push({ style: slice.style, geo: shaft });
+        pieces.push({ role: 'shaft', h: slice.h, y0: slice.y0 });
+      }
+      if (shaftFailed || !geos.length) {
+        for (const item of geos) item.geo.dispose();
         skippedDegenerate++;
         continue;
       }
-      geos.length = 0;
-      geos.push({ style: shaftStyle, geo: shaft });
-      pieces = [{ role: 'shaft', h, y0: 0 }];
     }
     for (const item of geos) queue(item.style, item.geo);
-    if (pieces.length > 1) podiumTowers++;
+    if (plan.parts.length > 1) podiumTowers++;
     extruded++;
     const ground = ISLAND_BOUNDS.sidewalkHeight;
     colliders.push({ minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ, maxY: ground + h });

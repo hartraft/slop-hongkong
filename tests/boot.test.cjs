@@ -43,7 +43,7 @@ test('Hong Kong boot builders stay on the harbour, landmark, and Central footpri
   assert.match(details, /hkCentralSignSites/);
   assert.match(details, /HongKongStreetDetails/);
   const grid = read('js/city-grid.js');
-  assert.match(grid, /function buildCityGrid\(scene\) \{\n  return buildHkCityGrid\(scene\);/);
+  assert.match(grid, /function buildCityGrid\(scene, gltfPlan = null\) \{\n  return buildHkCityGrid\(scene, gltfPlan\);/);
   assert.match(grid, /buildHkRoadRibbons\(group, roadMat, sidewalkMat\)/);
   assert.match(grid, /planHkRoadDeck\(ROADS, HK_CORE_WORLD\)/);
   assert.match(grid, /HkCurbs/);
@@ -78,7 +78,7 @@ test('Hong Kong boot builders stay on the harbour, landmark, and Central footpri
 
 test('native module entry and imports share canonical preloaded URLs on GitHub Pages', () => {
   const links = preloads.map((match) => match[1]);
-  assert.equal(links.length, 35);
+  assert.equal(links.length, 36);
   assert.equal(new Set(links).size, links.length, 'each module is preloaded once');
   assert.equal(entries.length, 1);
   assert.equal(entries[0][1], './js/main.js');

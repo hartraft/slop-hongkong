@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { HK_CORE_WORLD, HK_GLTF_SHEET, ISLAND_BOUNDS } from '../js/city-config.js';
+import { HK_CORE_WORLD, HK_GLTF_CAP, HK_GLTF_SHEET, HK_GLTF_SHEETS, ISLAND_BOUNDS } from '../js/city-config.js';
 import {
   assertSheetAllowed,
   boundsFromGltf,
@@ -98,8 +98,10 @@ test('11-SW-9B with no overlapping BUILDING models falls back only to 11-SW-9A',
   assert.match(fallback.reason, /11-SW-9B/);
   assert.match(fallback.reason, /11-SW-9A/);
   assert.doesNotMatch(fallback.reason, /8D/);
-  assert.throws(() => assertSheetAllowed('11-SW-8D'), /8D/);
+  assert.equal(assertSheetAllowed('11-SW-8D'), '11-SW-8D');
+  assert.equal(assertSheetAllowed('11-SW-9C'), '11-SW-9C');
   assert.equal(assertSheetAllowed('11-SW-9A'), '11-SW-9A');
+  assert.throws(() => assertSheetAllowed('manhattan'), /bad sheet/);
 });
 
 test('BUILDING glTF paths are the individualised models, not terrain or generic', () => {
@@ -111,8 +113,10 @@ test('BUILDING glTF paths are the individualised models, not terrain or generic'
   assert.equal(isBuildingGltf('BUILDING/B1/B1.bin'), false);
 });
 
-test('the manifest keeps a capped handful of Central masses and hides overlapping extrudes', () => {
-  assert.equal(HK_GLTF_SHEET, '');
+test('the manifest keeps Central masses up to the street cap and hides overlapping extrudes', () => {
+  assert.equal(HK_GLTF_SHEET, '11-SW-9C');
+  assert.deepEqual(HK_GLTF_SHEETS, ['11-SW-9C', '11-SW-8D']);
+  assert.equal(HK_GLTF_CAP, 80);
   const manifest = {
     sheet: '11-SW-9A',
     buildings: [
@@ -152,13 +156,17 @@ test('the manifest keeps a capped handful of Central masses and hides overlappin
   assert.match(line, /sidewalk/);
 });
 
-test('the local flag is the gltf query, else the empty city-config default', () => {
-  assert.equal(resolveHkGltfRequest('https://x/index.html'), null);
+test('the page loads the Central street sheets unless a query names one', () => {
+  const street = resolveHkGltfRequest('https://x/index.html');
+  assert.deepEqual(street.sheets, ['11-SW-9C', '11-SW-8D']);
+  assert.equal(street.cap, 80);
+  assert.equal(resolveHkGltfRequest('https://x/index.html', { configured: '', sheets: [] }), null);
   assert.equal(resolveHkGltfRequest('https://x/index.html?gltf=11-SW-9A').sheet, '11-SW-9A');
-  assert.equal(resolveHkGltfRequest('https://x/index.html?gltf=11-SW-9A').cap, 6);
+  assert.deepEqual(resolveHkGltfRequest('https://x/index.html?gltf=11-SW-9A').sheets, ['11-SW-9A']);
+  assert.equal(resolveHkGltfRequest('https://x/index.html?gltf=11-SW-9A').cap, 80);
   assert.equal(resolveHkGltfRequest('https://x/index.html?gltf=11-SW-9A&gltfCap=2').cap, 2);
   assert.equal(resolveHkGltfRequest('https://x/index.html?gltf=manhattan'), null);
-  assert.equal(resolveHkGltfRequest('https://x/index.html', { configured: '11-SW-9B' }).sheet, '11-SW-9B');
+  assert.equal(resolveHkGltfRequest('https://x/index.html', { configured: '11-SW-9B', sheets: [] }).sheet, '11-SW-9B');
   assert.equal(resolveHkGltfRequest('https://x/index.html?gltf=11-SW-9A', { configured: '11-SW-9B' }).sheet, '11-SW-9A');
 });
 
@@ -177,5 +185,8 @@ test('boot wires the sheet ahead of the extrude and preloads the frame', () => {
   assert.match(script, /chooseCentralSheet/);
   assert.match(script, /11-SW-9B/);
   assert.match(script, /11-SW-9A/);
-  assert.doesNotMatch(script, /11-SW-8D\.zip/);
+  assert.match(script, /STREET_SHEETS/);
+  assert.match(script, /11-SW-9C/);
+  assert.match(script, /11-SW-8D/);
+  assert.match(script, /subsetStreetSheet/);
 });
