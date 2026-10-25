@@ -23,12 +23,19 @@ import {
 import { digit1ChasePose, projectChaseNdc } from '../js/digit1-probe-frame.js';
 import {
   HK_BOC_PHOTO_CHART,
+  HK_DIGIT1_MIDBAND_GRID_ELIMINATED,
+  HK_DIGIT1_MIDBAND_HITS,
+  HK_DIGIT1_MIDBAND_HUNT,
+  HK_DIGIT1_MIDBAND_NOT_BUILDING,
+  HK_MIDBAND_PHOTO_CHARTS,
   NULL_FILL_EDGE,
   boxClosestDistance,
+  digit1MidbandChartsCover,
   filterPinSheetBuildings,
   footprintOverlapRatio,
   gltfAlbedoSampler,
-  gltfCoversFootprint
+  gltfCoversFootprint,
+  hkGltfBoxContains
 } from '../js/hk-gltf-frame.js';
 import { HK_PEDESTRIAN } from '../js/hk-pedestrian-data.js';
 import { HK_BUS_SHELTER, hkShelterRoofPose, planHkStreetGround } from '../js/hk-pedestrian.js';
@@ -547,6 +554,47 @@ export function digit1PhotoFidelity(sources) {
   return true;
 }
 
+// Cut #36 residual. True only when a LandsD BUILDING chart contains every
+// Digit1 mid-band hit. The procedural canyon is not that chart. An empty
+// HK_MIDBAND_PHOTO_CHARTS list is the exhaustive miss: 9C holds the hits, and
+// 9C / 8D / 14A / 13B leave them outside every BUILDING mesh. A false result
+// is an open residual. It does not fail the #22–#35 hold suite. Sleeping Dogs
+// is not claimed either way.
+export function digit1MidbandPhotoFidelity(sources) {
+  const frame = sources?.gltf || '';
+  if (!frame.includes('HK_DIGIT1_MIDBAND_HUNT')) return false;
+  if (!frame.includes('HK_MIDBAND_PHOTO_CHARTS')) return false;
+  if (!frame.includes('HK_DIGIT1_MIDBAND_NOT_BUILDING')) return false;
+  for (const row of HK_DIGIT1_MIDBAND_HUNT) {
+    if (!(row.closestM > 0)) return false;
+    if (!frame.includes(row.sheet) || !frame.includes(row.closestId)) return false;
+    for (const hit of HK_DIGIT1_MIDBAND_HITS) {
+      if (hkGltfBoxContains(row, hit.x, hit.z)) return false;
+    }
+  }
+  for (const row of HK_DIGIT1_MIDBAND_GRID_ELIMINATED) {
+    if (!(row.minM >= 400)) return false;
+  }
+  for (const hit of HK_DIGIT1_MIDBAND_HITS) {
+    if (hkGltfBoxContains(HK_DIGIT1_MIDBAND_NOT_BUILDING, hit.x, hit.z)) return false;
+    if (hkGltfBoxContains(HK_BOC_PHOTO_CHART, hit.x, hit.z)) return false;
+  }
+  if (!digit1MidbandCanyonFidelity(sources)) return false;
+  if (!digit1MidbandFacadeFidelity(sources)) return false;
+  if (digit1MidbandChartsCover()) {
+    const fetchSrc = sources?.fetch || '';
+    const buildings = sources?.buildings || '';
+    for (const chart of HK_MIDBAND_PHOTO_CHARTS) {
+      if (!HK_GLTF_SHEETS.includes(chart.sheet)) return false;
+      if (!fetchSrc.includes(chart.sheet)) return false;
+      if (!frame.includes(chart.id)) return false;
+    }
+    if (!/HkMidbandCanyon/.test(buildings)) return false;
+    return true;
+  }
+  return false;
+}
+
 // Canyon pack is the chart the flank yield uncovers. No ashlar slab, no orange ribbon.
 export function digit1CanyonDensity(sources, plan) {
   if (!noAshlarInvaderSlabs(sources, plan)) return false;
@@ -602,8 +650,11 @@ export function digit1InvaderGate(root) {
     digit1BocPrismFidelity: digit1BocPrismFidelity(sources),
     digit1MidbandCanyonFidelity: digit1MidbandCanyonFidelity(sources),
     digit1MidbandFacadeFidelity: digit1MidbandFacadeFidelity(sources),
-    digit1PhotoFidelity: digit1PhotoFidelity(sources)
+    digit1PhotoFidelity: digit1PhotoFidelity(sources),
+    digit1MidbandPhotoFidelity: digit1MidbandPhotoFidelity(sources)
   };
+  // #22–#35 holds. The mid-band photograph is an open residual until a BUILDING
+  // chart covers the hits. A documented miss does not fail this suite.
   bars.pass = bars.noAshlarInvaderSlabs
     && bars.noZombieSkyHoles
     && bars.nullFillEdge >= 1024
@@ -622,6 +673,10 @@ export function digit1InvaderGate(root) {
     && bars.digit1MidbandFacadeFidelity === true
     && bars.digit1PhotoFidelity === true
     && !/NULL_FILL_EDGE = 256/.test(sources.gltf);
+  const openResiduals = [];
+  if (bars.digit1MidbandPhotoFidelity !== true) openResiduals.push('digit1MidbandPhotoFidelity');
+  bars.openResiduals = openResiduals;
+  bars.sleepingDogsBar = 'NOT YET';
   return bars;
 }
 
