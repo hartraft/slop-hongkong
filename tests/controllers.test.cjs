@@ -36,6 +36,7 @@ function keyboardHarness(nyc = {}) {
       './actor-models.js': {},
       './pedestrians.js': {},
       './vehicle-lights.js': {},
+      './geo-source.js': { GEO: { city: 'hk' } },
       './landmarks.js': {}
     }
   });
