@@ -3,11 +3,15 @@ import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { createPostProcessing } from './post-processing.js';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
-import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
+import { getLocationLabel, isTypingInField, ROADS, PLACES, TELEPORT_LOCATIONS } from './city-config.js';
 import { buildCityGrid } from './city-grid.js';
 import { buildBoroughs } from './boroughs.js';
 import { buildLandmarks } from './landmarks.js';
 import { buildCityBlocks } from './buildings.js';
+import { mountHkGltfBuildings, prepareHkGltfSheet, setLandsdAnisotropyLimit } from './hk-gltf.js';
+import { DIGIT1_PROBE_SAMPLES, isPaleRgb, ndcToReadPixel, parseDigit1ProbeRequest } from './digit1-probe-frame.js';
+import { runDigit1Probe } from './digit1-probe.js';
+import { hidePlandCorridorExtrudes, mountPlandCorridor, preparePlandCorridor } from './hk-pland.js';
 import { buildStreetDetails } from './street-details.js';
 import { createTrafficSystem, createHighwayTraffic } from './traffic.js';
 import { buildRoadPaint } from './road-paint.js';
@@ -16,11 +20,12 @@ import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
 import { LightingSystem } from './lighting.js';
-import { NYCMapSystem } from './nyc-map.js';
+import { HkMapSystem } from './hk-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js';
 
-// Application setup, shader warm-up and frame loop.
+// js/main.js
+// Main entry point for Hong Kong in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
 
 async function initApp() {
   const container = document.getElementById('canvas-container');
@@ -28,28 +33,16 @@ async function initApp() {
   const loadingStatus = document.getElementById('loading-status');
   const loadingTrack = loadingOverlay ? loadingOverlay.querySelector('.loader-track') : null;
   const loadingFill = document.getElementById('loading-progress');
-  // Only shader compilation has measurable progress; other stages use the sweeping bar.
+  // The loading bar sweeps while the city is being built (the main thread is busy) and fills as the shaders compile
   const setLoadingProgress = (p) => {
     if (!loadingFill) return;
     if (loadingTrack) loadingTrack.classList.remove('is-indeterminate');
     loadingFill.style.transform = `scaleX(${Math.min(1, Math.max(0, p))})`;
   };
 
-  async function showLoadingStage(message) {
-    if (loadingStatus) loadingStatus.textContent = message;
-    if (loadingTrack) loadingTrack.classList.add('is-indeterminate');
-    if (document.hidden) return;
-    // Let the label paint before synchronous work. The timeout also lets hidden tabs keep loading.
-    await new Promise((resolve) => {
-      const timeout = setTimeout(resolve, 100);
-      requestAnimationFrame(() => {
-        clearTimeout(timeout);
-        setTimeout(resolve, 0);
-      });
-    });
+  if (loadingStatus) {
+    loadingStatus.textContent = `正在啟動 Three.js r${THREE.REVISION} WebGPU 渲染器與 TSL 著色器…`;
   }
-
-  await showLoadingStage('Initializing graphics...');
 
   // 1. Initialize Three.js WebGPURenderer with 32-bit float reversedDepthBuffer
   const renderer = new THREE.WebGPURenderer({
@@ -74,52 +67,90 @@ async function initApp() {
 
   await renderer.init();
   markInit('renderer');
+  // Chrome 156 accepts sampler maxAnisotropy 16 but leaves the device limit
+  // undefined. An explicit 1 (or ?landsdAniso=1) keeps the one-tap chase sample.
+  const maxAniso = renderer.backend?.device?.limits?.maxSamplerAnisotropy;
+  if (maxAniso) setLandsdAnisotropyLimit(maxAniso);
+  const anisoQuery = new URL(window.location.href).searchParams.get('landsdAniso');
+  if (anisoQuery && Number.isFinite(Number(anisoQuery))) setLandsdAnisotropyLimit(Number(anisoQuery));
+  if (new URL(window.location.href).searchParams.get('probe') === 'digit1') {
+    const device = renderer.backend?.device;
+    const limits = device?.limits;
+    if (limits) {
+      console.info(`[digit1-probe] limits maxBuffer ${limits.maxBufferSize} maxTex ${limits.maxTextureDimension2D}`);
+    }
+    device?.lost?.then((info) => {
+      console.error(`[digit1-probe] device lost ${info?.reason || ''} ${info?.message || ''}`);
+    });
+  }
 
-  // 2. Scene, atmosphere and lighting
-  await showLoadingStage('Creating sky and environment lighting...');
+  // 2. Build Scene & Physical Atmospheric Sky / PMREM IBL / 4096x4096 Shadow Lighting
   const scene = new THREE.Scene();
   const lightingSystem = new LightingSystem(scene, renderer);
   markInit('lighting');
 
-  // 3. Build Manhattan Geography, Iconic Landmarks, Blocks, Street Details & Traffic
-  await showLoadingStage('Building streets, parks and waterfronts...');
-  const cityGrid = buildCityGrid(scene);
+  if (loadingStatus) {
+    loadingStatus.textContent = '正在建構香港街道、海岸與樓宇…';
+  }
+
+  // 3. Hong Kong coast, footprint blocks, empty landmark slots, street details, and traffic.
+  // PlanD donor is the Digit1 default. LandsD stays in front. ?pland=off leaves the
+  // procedural corridor. Compare leaves the LandsD meshes unmounted.
+  const plandPlan = await preparePlandCorridor(window.location.href);
+  let gltfPlan = await prepareHkGltfSheet(window.location.href);
+  if (plandPlan) {
+    // Corridor extrudes stay hidden in both modes. No belt slab is emitted.
+    // The near PlanD omit is belt-capped when the donor mounts. Flank charts
+    // yield the look-axis shell and the canyon past 80 m in the trim.
+    gltfPlan = hidePlandCorridorExtrudes(gltfPlan);
+    gltfPlan.plandMode = plandPlan.mode;
+  }
+  if (loadingStatus && gltfPlan?.selected?.length && plandPlan?.mode !== 'compare') {
+    loadingStatus.textContent = '正在載入地政總署單體建築模型…';
+  }
+  const cityGrid = buildCityGrid(scene, gltfPlan);
   markInit('cityGrid');
-  await showLoadingStage('Building bridges and surrounding boroughs...');
   const boroughs = buildBoroughs(scene, { sidewalks: cityGrid.sidewalks });
   markInit('boroughs');
-  await showLoadingStage('Building landmarks...');
-  const { colliders: landmarkColliders } = buildLandmarks(scene);
+  const { colliders: landmarkColliders } = buildLandmarks(scene, gltfPlan);
   markInit('landmarks');
-  await showLoadingStage('Generating building footprints and facades...');
-  const cityBlocks = buildCityBlocks(scene, landmarkColliders);
+  const cityBlocks = buildCityBlocks(scene, gltfPlan);
   markInit('blocks');
-  const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...boroughs.colliders, ...(cityGrid.colliders || [])];
+  const gltfBuildings = plandPlan?.mode === 'compare'
+    ? { colliders: [], loaded: 0, failed: 0, group: null }
+    : await mountHkGltfBuildings(scene, gltfPlan);
+  if (plandPlan?.mode === 'compare') console.info('[pland] compare: LandsD individualised meshes stay off');
+  markInit('gltf');
+  if (loadingStatus && plandPlan) loadingStatus.textContent = '正在載入規劃署三維實景（中環街廊）…';
+  const plandMount = await mountPlandCorridor(scene, plandPlan, gltfPlan?.selected || []);
+  const plandCredit = document.getElementById('hud-pland-credit');
+  if (plandCredit && plandPlan && plandMount.loaded > 0) {
+    plandCredit.hidden = false;
+    plandCredit.textContent = plandPlan.attribution;
+    if (plandPlan.capture) plandCredit.title = plandPlan.capture;
+  }
+  markInit('pland');
+  const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...gltfBuildings.colliders, ...boroughs.colliders, ...(cityGrid.colliders || [])];
 
-  await showLoadingStage('Placing trees, streetlights and street furniture...');
-  const streetDetails = buildStreetDetails(scene, allColliders);
+  const streetDetails = buildStreetDetails(scene, gltfPlan);
   markInit('streetDetails');
-  await showLoadingStage('Creating traffic and pedestrian routes...');
   // Buildings turned along non-grid streets have oriented colliders whose world bounds reach past their lots: they stay
-  // inside the property line anyway, so the road network (lanes & sidewalks) doesn't need them.
-  // Elevated building sections that clear even a bus don't obstruct ground traffic.
+  // inside the property line anyway, so the road network (lanes & sidewalks) doesn't need them
   const trafficSystem = createTrafficSystem(scene, cityGrid.sidewalks, [
     ...cityGrid.footprints,
     ...streetDetails.footprints,
-    ...allColliders.filter((c) => !c.obb && (c.minY ?? 0) < 3.5)
-  ], streetDetails.signalIntersections);
+    ...allColliders.filter((c) => !c.obb)
+  ]);
   markInit('traffic');
   const highwayTraffic = createHighwayTraffic(scene, cityGrid.highwayLanes);
-  await showLoadingStage('Adding road markings...');
   buildRoadPaint(scene, trafficSystem.network);
   markInit('roadPaint');
 
   // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Helicopter) & Multi-Camera System
-  await showLoadingStage('Preparing player, vehicles and controls...');
   const controllerManager = new ThirdPersonControllerManager(scene, allColliders);
   // Reuse teleport placement so saved players return at rest, close to their last positions.
   try {
-    const saved = JSON.parse(localStorage.getItem('nyc-player-state'));
+    const saved = JSON.parse(localStorage.getItem('hk-player-state'));
     if (saved?.version === 1) {
       for (const mode of Object.keys(controllerManager.entities)) {
         const p = saved.entities?.[mode];
@@ -131,12 +162,27 @@ async function initApp() {
     }
   } catch { /* Missing or unavailable storage does not prevent playing. */ }
 
+  // Street proof is the person chase at eye height. A flyover frame is not acceptance.
+  // index.html?at=-1.4,29.3,1.29 stands on Des Voeux looking east.
+  // ?probe=digit1 reads those pixels back to the mesh that drew them.
+  const digit1ProbeRequest = parseDigit1ProbeRequest(window.location.href);
+  try {
+    const at = new URL(window.location.href).searchParams.get('at');
+    if (at) {
+      const [x, z, heading] = at.split(',').map(Number);
+      if ([x, z, heading].every(Number.isFinite)) {
+        controllerManager.setMode('person');
+        controllerManager.teleportActiveTo(x, z, heading);
+      }
+    }
+  } catch { /* A bad query leaves the Central spawn. */ }
+
   function savePlayerState() {
     try {
       const entities = Object.fromEntries(Object.entries(controllerManager.entities).map(([mode, entity]) => [mode, {
         x: entity.position.x, y: entity.position.y, z: entity.position.z, heading: entity.heading
       }]));
-      localStorage.setItem('nyc-player-state', JSON.stringify({ version: 1, activeMode: controllerManager.activeMode, entities }));
+      localStorage.setItem('hk-player-state', JSON.stringify({ version: 1, activeMode: controllerManager.activeMode, entities }));
     } catch { /* Storage may be disabled or full. */ }
   }
 
@@ -150,8 +196,8 @@ async function initApp() {
     if (!soundButton) return;
     soundButton.disabled = !audioSystem.supported;
     soundButton.setAttribute('aria-pressed', String(audioSystem.enabled));
-    soundButton.setAttribute('aria-label', audioSystem.enabled ? 'Mute sound' : 'Enable sound');
-    soundButton.title = audioSystem.supported ? `${audioSystem.enabled ? 'Mute' : 'Enable'} sound [N]` : 'Web Audio is unavailable';
+    soundButton.setAttribute('aria-label', audioSystem.enabled ? '靜音' : '開啟聲音');
+    soundButton.title = audioSystem.supported ? `${audioSystem.enabled ? '靜音' : '開啟聲音'} [N]` : '無法使用 Web Audio';
     soundButton.querySelector('use').setAttribute('href', audioSystem.enabled ? '#i-sound' : '#i-sound-off');
   }
   soundButton?.addEventListener('click', () => audioSystem.setEnabled(!audioSystem.enabled));
@@ -166,40 +212,23 @@ async function initApp() {
 
   // Island-wide static geometry: chunk & distance-cull the small props, shadow stand-ins for the big casters
   // (scene-culling.js)
-  await showLoadingStage('Preparing scene visibility and shadows...');
-  const cullingRoots = ['ManhattanCityGrid', 'ManhattanCityBlocks', 'ManhattanStreetDetails', 'ManhattanLandmarks', 'Boroughs']
+  const cullingRoots = ['HongKongCityGrid', 'HongKongCityBlocks', 'HongKongStreetDetails', 'Boroughs']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
   setupSceneCulling(scene, cullingRoots, lightingSystem.sunLight.shadow);
-
-  // Initialize static world matrices once, including the chunks and shadow proxies created above.
-  // Crowd, tree and building-detail animation changes instance/pose buffers, not Object3D transforms.
-  const dynamicRoots = [
-    trafficSystem.group,
-    highwayTraffic.group,
-    scene.getObjectByName('StoreClusteredLights'),
-    scene.getObjectByName('StreetClusteredLights'),
-    ...Object.values(controllerManager.entities).map((entity) => entity.mesh),
-    controllerManager.entities.cyclist.helmet
-  ];
-  scene.updateMatrixWorld(true);
-  scene.matrixWorldAutoUpdate = false;
   markInit('culling');
 
-  // On WebGPU, small InstancedMeshes (<= 1000 instances) keep their matrices in uniform buffers that three.js
+  // Small InstancedMeshes (<= 1000 instances) keep their matrices in uniform buffers that three.js
   // re-uploads on every draw of every pass (~2.5 MB/frame with the shadow cascades, stalling the GPU queue).
-  // Storage attributes only upload when needed; WebGL2 needs ordinary instanced attributes for correct transforms.
-  if (renderer.backend.isWebGPUBackend) {
-    scene.traverse((object) => {
-      if (object.isInstancedMesh) {
-        object.instanceMatrix = new THREE.StorageInstancedBufferAttribute(object.instanceMatrix.array, 16);
-      }
-    });
-  }
+  // Storage attributes are only uploaded when instanceMatrix.needsUpdate is set.
+  scene.traverse((object) => {
+    if (object.isInstancedMesh) {
+      object.instanceMatrix = new THREE.StorageInstancedBufferAttribute(object.instanceMatrix.array, 16);
+    }
+  });
 
   // 5. TSL RenderPipeline with Half-Res Screen Space Reflections (SSRNode), Bloom & Filmic Toning
   //    Fade out distant and matte surfaces so SSR spends its rays on visible glossy reflections.
-  await showLoadingStage('Setting up visual effects, map and interface...');
   const scenePass = pass(scene, cameraSystem.camera);
   // The multisampled colour attachments (output, normal, metalRough) only need resolving, never storing: discarding
   // them spares the GPU writing 3 x 4 samples per pixel to memory every frame (transient, memoryless attachments where
@@ -271,13 +300,13 @@ async function initApp() {
 
   // Keyboard guide for each mode: [keys, action]
   const controlHints = {
-    person: [[['W', 'S'], 'Walk / Run'], [['A', 'D'], 'Turn'], [['Space'], 'Jump'], [['Drag'], 'Orbit']],
-    car: [[['W', 'S'], 'Drive / Reverse'], [['A', 'D'], 'Steer'], [['B'], 'Horn'], [['Drag'], 'Orbit']],
-    cyclist: [[['W', 'S'], 'Pedal / Brake'], [['A', 'D'], 'Lean & Turn'], [['Drag'], 'Orbit']],
-    helicopter: [[['W', 'S'], 'Pitch'], [['A', 'D'], 'Yaw'], [['Space', 'E'], 'Ascend'], [['Q', 'C'], 'Descend']]
+    person: [[['W', 'S'], '步行'], [['A', 'D'], '轉向'], [['Shift'], '衝刺'], [['Space'], '跳躍'], [['Drag'], '環視']],
+    car: [[['W', 'S'], '前進／倒車'], [['A', 'D'], '轉向'], [['Shift'], '加速'], [['B'], '響號'], [['Drag'], '環視']],
+    cyclist: [[['W', 'S'], '踩踏／煞車'], [['A', 'D'], '傾斜轉向'], [['Shift'], '衝刺'], [['Drag'], '環視']],
+    helicopter: [[['W', 'S'], '俯仰'], [['A', 'D'], '偏航'], [['Space', 'E'], '上升'], [['Q', 'C'], '下降'], [['Shift'], '加速']]
   };
-  // Top speeds in mph (controllers.js caps them at 8.2, 36, 19 & 52 m/s): full scale of the speed meter
-  const topSpeedMph = { person: 18, car: 81, cyclist: 43, helicopter: 116 };
+  // Boosted top speeds in km/h (controllers.js caps them at 8.2, 36, 19 & 52 m/s): full scale of the speed meter
+  const topSpeedKmh = { person: 30, car: 130, cyclist: 68, helicopter: 187 };
 
   function renderControlHints(mode) {
     if (!elControlsHint) return;
@@ -420,7 +449,7 @@ async function initApp() {
 
   // Where you are: the place's name over its street corner, drawn as a pair of NYC street-name signs
   const roadNames = new Set(ROADS.map((r) => r.name));
-  const placeNames = new Set(NYC_LANDMARKS.map((l) => l.name));
+  const placeNames = new Set(PLACES.map((l) => l.name));
   let locationText = '';
   function renderLocation(label) {
     if (!elLocation || label === locationText) return;
@@ -449,7 +478,7 @@ async function initApp() {
         streets = streets.slice(5);
         const near = document.createElement('span');
         near.className = 'location-near';
-        near.textContent = 'near';
+        near.textContent = '近';
         row.appendChild(near);
       }
       for (const name of streets.split(' & ')) {
@@ -477,7 +506,7 @@ async function initApp() {
     return destination;
   }
 
-  const mapSystem = new NYCMapSystem({
+  const mapSystem = new HkMapSystem({
     controllerManager,
     cameraSystem,
     trafficSystem,
@@ -488,7 +517,7 @@ async function initApp() {
       gamepadControls.setEnabled(!open);
       const mapHint = document.getElementById('fullmap-hover-info');
       if (open && touchControls.available && mapHint) {
-        mapHint.textContent = 'Tap to teleport · Drag to pan · Use + / − to zoom';
+        mapHint.textContent = '輕觸傳送 · 拖曳平移 · 以 +／− 縮放';
       }
     },
     onTeleport: teleportTo
@@ -513,7 +542,7 @@ async function initApp() {
       document.body.classList.toggle('hud-minimized');
       const isMin = document.body.classList.contains('hud-minimized');
       hudToggleBtn.setAttribute('aria-pressed', String(isMin));
-      hudToggleBtn.setAttribute('aria-label', isMin ? 'Show HUD' : 'Hide HUD');
+      hudToggleBtn.setAttribute('aria-label', isMin ? '顯示介面' : '隱藏介面');
       hudToggleBtn.title = isMin ? 'Show the HUD [H]' : 'Clean view: hide the HUD [H]';
       if (isMin) closePopovers();
     });
@@ -545,13 +574,13 @@ async function initApp() {
         selectCamera('pov', true);
         break;
       case 'Digit8':
-        selectCamera('fifthAve', true);
+        selectCamera('statueSquare', true);
         break;
       case 'Digit9':
-        selectCamera('timesSquare', true);
+        selectCamera('admiralty', true);
         break;
       case 'Digit0':
-        selectCamera('chryslerGCT', true);
+        selectCamera('tstClock', true);
         break;
       case 'KeyV':
         cycleCamera(e.shiftKey ? -1 : 1);
@@ -586,12 +615,23 @@ async function initApp() {
   if (document.fonts) document.fonts.ready.then(placeModeIndicator);
   markInit('ui');
 
-  // Compile shaders behind the loading screen. Overlapping compileAsync() jobs keep compilation moving
-  // while individual jobs yield to the browser.
-  const COMPILE_POOL = 16;
+  // The loading screen stays up while the shaders compile (precompileShaders() & the warm-up frame, see the loop) and
+  // until the first frame is on screen
+  if (loadingStatus) {
+    loadingStatus.textContent = '正在編譯著色器與渲染管線…';
+  }
+
+  // 6b. Shader pre-compilation behind the loading screen. compileAsync() builds the node graphs in slices and has the GPU
+  //     process compile the pipelines in parallel, but after every 8 ms slice it waits for a rendered frame, which
+  //     leaves the main thread idle about half the time while nothing else animates; several calls side by side keep
+  //     it busy (warm cache: 2.1 s instead of 4.0 s). (Rendering straight away compiled ~500 pipelines one after
+  //     another: ~25 s with a cold shader cache.)
+  // Sixteen overlapping compileAsync calls drop the SwiftShader device on the
+  // Digit1 probe (instance lost, then every createBuffer fails). One at a time
+  // still compiles the same pipelines.
+  const COMPILE_POOL = digit1ProbeRequest.enabled ? 1 : 16;
   const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0)));
   async function precompileShaders() {
-    await showLoadingStage('Preparing reflections and bloom...');
     // An empty frame first: it sets up the post-processing chain, which configures the scene pass's render target
     // (MSAA samples, depth format), so the pipelines compiled below are the very ones the scene pass asks for
     scene.visible = false;
@@ -601,23 +641,19 @@ async function initApp() {
 
     // Every visible object with frustum culling off (like the warm-up frame, see the loop). Plain meshes that share
     // a material share its shader, so one job compiles them in turn (the first build serves the rest); every
-    // instanced mesh gets a build of its own unless its chunks share a pipeline
+    // instanced mesh gets a build of its own
     const culled = [];
     const jobs = [];
     const jobByMaterial = new Map();
-    const pipelines = new Set();
     scene.traverseVisible((o) => {
       if (o.frustumCulled) {
         culled.push(o);
         o.frustumCulled = false;
       }
       if (!o.isMesh && !o.isLine && !o.isPoints && !o.isSprite) return;
-      // Use the first visible chunk: the original representative may be in an inactive tree cell. Shadow stand-ins
-      // only draw in the shadow maps (the warm-up frame compiles those).
-      if (o.userData.shadowProxy) return;
-      const pipeline = o.userData.sharesPipelineWith || o;
-      if (pipelines.has(pipeline)) return;
-      pipelines.add(pipeline);
+      // chunks of one mesh share its pipeline (the first one compiles it) and the shadow stand-ins only ever draw in
+      // the shadow maps (the warm-up frame compiles those)
+      if (o.userData.sharesPipelineWith || o.userData.shadowProxy) return;
       if (o.isInstancedMesh || Array.isArray(o.material)) {
         jobs.push([o]);
         return;
@@ -631,8 +667,6 @@ async function initApp() {
       job.push(o);
     });
 
-    await showLoadingStage(`Compiling scene shaders... 0 / ${jobs.length} batches`);
-    setLoadingProgress(0);
     renderer.setRenderTarget(scenePass.renderTarget);
     renderer.setMRT(sceneMRT);
     const compile = async (object) => {
@@ -653,7 +687,7 @@ async function initApp() {
         for (const object of job) await compile(object);
         done++;
         if (loadingStatus) {
-          loadingStatus.textContent = `Compiling scene shaders... ${done} / ${jobs.length} batches (${Math.round((done / jobs.length) * 100)}%)`;
+          loadingStatus.textContent = `正在編譯著色器與渲染管線… ${Math.round((done / jobs.length) * 100)}%`;
         }
         setLoadingProgress(done / jobs.length);
       }
@@ -666,7 +700,6 @@ async function initApp() {
 
   await precompileShaders();
   markInit('compile');
-  await showLoadingStage('Preparing shadows and the first frame...');
 
   // 6. Animation Loop
   let lastTime = performance.now();
@@ -675,6 +708,8 @@ async function initApp() {
   let fpsTimer = 0;
   let nextPlayerSave = 0;
   let warmedUp = false; // see the first frame below
+  let digit1ProbeStarted = false;
+  let digit1SettleAt = 0;
 
   if (elFps) elFps.textContent = '60';
 
@@ -710,8 +745,6 @@ async function initApp() {
     mapSystem.update();
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
     if (warmedUp) updateSceneCulling(cameraSystem.camera.position); // the warm-up frame draws every chunk
-    // Traffic collisions can move the player after controller updates; finalize moving hierarchies here.
-    for (const root of dynamicRoots) root.updateMatrixWorld();
 
     // Render frame via TSL RenderPipeline (SSR + Bloom)
     if (!warmedUp) {
@@ -719,12 +752,8 @@ async function initApp() {
       // map passes): with frustum culling off, every visible material's pipelines compile now instead of stalling the
       // first time the camera turns towards it (one chunk / shadow stand-in per shared pipeline is enough)
       const culled = [];
-      const pipelines = new Set();
-      scene.traverseVisible((o) => {
-        const pipeline = o.userData.sharesPipelineWith || o;
-        if (pipelines.has(pipeline)) return;
-        pipelines.add(pipeline);
-        if (o.frustumCulled) {
+      scene.traverse((o) => {
+        if (o.frustumCulled && !o.userData.sharesPipelineWith) {
           culled.push(o);
           o.frustumCulled = false;
         }
@@ -740,7 +769,6 @@ async function initApp() {
       // The loading screen stays up until the GPU has got through the first frame (and the pipelines its warm-up
       // compiled), i.e. until the city is actually on screen
       const device = renderer.backend.device;
-      if (loadingStatus) loadingStatus.textContent = 'Waiting for graphics to finish the first frame...';
       Promise.resolve(device && device.queue.onSubmittedWorkDone()).catch(() => {}).then(() => {
         markInit('gpu');
         console.log(`[init] ${initTimings.join(', ')}`);
@@ -762,19 +790,95 @@ async function initApp() {
 
       const activeEnt = controllerManager.getActiveEntity();
       const mode = controllerManager.activeMode;
-      const mph = Math.round(Math.abs(activeEnt.speed) * 2.237);
-      const altFt = Math.max(0, Math.round(activeEnt.position.y * 3.281));
+      const kmh = Math.round(Math.abs(activeEnt.speed) * 3.6);
+      const altM = Math.max(0, Math.round(activeEnt.position.y));
 
       if (elFps) {
         elFps.textContent = String(currentFps);
         elFps.className = currentFps >= 50 ? 'fps-ok' : currentFps >= 30 ? 'fps-warn' : 'fps-bad';
       }
-      if (elSpeed) elSpeed.textContent = String(mph);
-      if (elSpeedMeter) elSpeedMeter.style.transform = `scaleX(${Math.min(1, mph / (topSpeedMph[mode] || 80))})`;
-      if (elAltitude) elAltitude.textContent = altFt.toLocaleString('en-US');
+      if (elSpeed) elSpeed.textContent = String(kmh);
+      if (elSpeedMeter) elSpeedMeter.style.transform = `scaleX(${Math.min(1, kmh / (topSpeedKmh[mode] || 130))})`;
+      document.body.classList.toggle('is-boosting', controllerManager.keys.boost && kmh > 0);
+      if (elAltitude) elAltitude.textContent = altM.toLocaleString('zh-Hant');
       // The street corner of the player on the follow cameras, of the camera itself on the scenic ones
       const where = cameraSystem.getActivePreset().category === 'follow' ? activeEnt.position : cameraSystem.currentPos;
       renderLocation(getLocationLabel(where.x, where.z));
+    }
+
+    if (digit1ProbeRequest.enabled && warmedUp && !digit1ProbeStarted) {
+      const overlayGone = !loadingOverlay || loadingOverlay.classList.contains('hidden');
+      // The hide class starts a 0.6s fade. SwiftShader can take seconds per
+      // frame, so this is wall time, not a frame count.
+      if (!overlayGone) {
+        // keep drawing
+      } else if (!digit1SettleAt) {
+        digit1SettleAt = performance.now();
+      } else if (performance.now() - digit1SettleAt < 800) {
+        // keep drawing through the fade
+      } else {
+      digit1ProbeStarted = true;
+      const entity = controllerManager.getActiveEntity();
+      const src = renderer.domElement;
+      try {
+        const snap = document.createElement('canvas');
+        snap.width = src.width;
+        snap.height = src.height;
+        const ctx = snap.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(src, 0, 0);
+        const data = ctx.getImageData(0, 0, snap.width, snap.height).data;
+        window.__digit1LiveRgb = DIGIT1_PROBE_SAMPLES.map(([ndcX, ndcY]) => {
+          const pixel = ndcToReadPixel(ndcX, ndcY, snap.width, snap.height, 'top');
+          const i = (pixel.y * snap.width + pixel.x) * 4;
+          const rgb = [data[i], data[i + 1], data[i + 2]];
+          return { ndc: [ndcX, ndcY], pixel, rgb, pale: isPaleRgb(rgb) };
+        });
+      } catch (err) {
+        window.__digit1LiveRgb = [];
+        console.warn('[digit1-probe] live canvas', err?.message || err);
+      }
+      // Leave the loop running until the harness has snapped the presented
+      // frame. Stopping it first, then building an id material per mesh,
+      // drops the SwiftShader device before any pixel can be read.
+      window.__digit1Stage = 'live';
+      queueMicrotask(() => {
+        const deadline = performance.now() + 20000;
+        const waitForShot = () => new Promise((resolve) => {
+          const tick = () => {
+            if (window.__digit1Shot === 'live' || performance.now() > deadline) resolve();
+            else setTimeout(tick, 30);
+          };
+          tick();
+        });
+        waitForShot().then(() => {
+        renderer.setAnimationLoop(null);
+        if (window.__digit1BootErrors?.length) {
+          console.info('[digit1-probe] boot', window.__digit1BootErrors.slice(0, 8).join(' | '));
+        }
+        runDigit1Probe({
+          renderer,
+          scene,
+          camera: cameraSystem.camera,
+          cameraSystem,
+          entity,
+          sky: lightingSystem.sky,
+          renderPipeline,
+          requestedAt: digit1ProbeRequest.at,
+          groundAt: (x, z) => controllerManager.getGroundHeight(x, z, 'person')
+        }).then((report) => {
+          window.__digit1Probe = report;
+          console.info(`[digit1-probe] ${report.premise} ${report.painter}`);
+        }).catch((err) => {
+          window.__digit1Probe = {
+            premise: 'INCONCLUSIVE',
+            painter: '',
+            reason: String(err && err.stack ? err.stack : err)
+          };
+          console.error('[digit1-probe]', err);
+        });
+        });
+      });
+      }
     }
   });
 }

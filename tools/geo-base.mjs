@@ -1,43 +1,46 @@
-// Shared data loading, coordinate transforms and geometry helpers for the geodata generator.
-// Sources: NYC Open Data and OpenStreetMap. Frame: 1 unit = 1 m, x = Manhattan-grid east, z = grid south
-// (north = -z), origin at the centreline
-// intersection of 5th Ave & 42nd St, axes turned 29.0° from true north (the grid's measured bearing).
+// tools/geo-base.mjs
+// Shared world frame for the geodata tools, plus the NYC shoreline build that still feeds js/nyc-geodata.js.
+// Frame: 1 unit = 1 m, x = axis east, z = axis south (north = -z). Constants live in tools/geo-frame.mjs.
 //
-// Inputs (tools/data/, see tools/fetch-geodata.sh):
-//   dcp_boroughs.json      NYC DCP Borough Boundaries (water areas excluded)  data.cityofnewyork.us gthc-hcne
-//   cscl_manhattan.json    NYC street centerline (CSCL), Manhattan             data.cityofnewyork.us inkn-q76z
-//   nycparks_manhattan.json NYC Parks properties, Manhattan                    data.cityofnewyork.us enfh-gkve
-//   osm_*.json             OpenStreetMap via Overpass (Central Park features, piers, NJ coastline)
+// GEO_CITY unset or nyc (default): Manhattan grid. Origin is the centreline intersection of 5th Ave & 42nd St.
+//   Bearing starts at 29.017° and is refined from the avenues. This path reads NYC Open Data.
+// GEO_CITY=hk: Central / Statue Square–Chater, true north. Does not read CSCL or DCP.
+//   The street graph is tools/geo-hk-streets.mjs (LandsD Road Centreline + OSM highways).
+//   Blocks are tools/geo-hk-blocks.mjs (LandsD Building footprints). See docs/HK_GEO_PIPELINE.md.
 //
-// Run tools/build-geodata.mjs to generate js/nyc-geodata.js.
+// NYC inputs (tools/data/, required only when GEO_CITY is nyc):
+//   dcp_boroughs.json       NYC DCP Borough Boundaries (water areas excluded)  data.cityofnewyork.us gthc-hcne
+//   cscl_manhattan.json     NYC street centerline (CSCL), Manhattan             data.cityofnewyork.us inkn-q76z
+//   nycparks_manhattan.json NYC Parks properties, Manhattan                     data.cityofnewyork.us enfh-gkve
+//   osm_*.json              OpenStreetMap via the NYC queries q_coast, q_cp, q_landmarks, q_piers
+//
+// usage: GEO_DATA=tools/data node tools/build-geodata.mjs [outFile]
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createFrame, HK_ISLAND_KOWLOON_BBOX, resolveCity } from './geo-frame.mjs';
 
 const DATA = process.env.GEO_DATA || fileURLToPath(new URL('data/', import.meta.url));
 const load = (f) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
 const log = (...a) => console.log('[geodata]', ...a);
 
+const cityId = resolveCity(process.env.GEO_CITY);
+const frame = createFrame(cityId);
+
 // =====================================================================================================================
 // 1. FRAME
 // =====================================================================================================================
-const LAT0 = 40.75318;
-const LON0 = -73.98185;
-const A = 6378137.0;
-const E2 = 6.69437999014e-3;
-const PHI0 = (LAT0 * Math.PI) / 180;
-const SIN0 = Math.sin(PHI0);
-const NRAD = A / Math.sqrt(1 - E2 * SIN0 * SIN0);
-const MRAD = (A * (1 - E2)) / Math.pow(1 - E2 * SIN0 * SIN0, 1.5);
-const KX = (Math.PI / 180) * NRAD * Math.cos(PHI0);
-const KY = (Math.PI / 180) * MRAD;
-let THETA = (29.017 * Math.PI) / 180; // refined below from the avenues
-let ORIGIN = [0, 0]; // grid (u, v) of 5th Ave & 42nd St, refined below
+const LAT0 = frame.LAT0;
+const LON0 = frame.LON0;
+const KX = frame.KX;
+const KY = frame.KY;
+let THETA = frame.thetaRad; // NYC: refined below from the avenues. HK: true north, left at 0.
+let ORIGIN = [0, 0]; // NYC: grid (u, v) of 5th Ave & 42nd St, refined below. HK: LAT0/LON0 is the origin.
 
 // Local tangent plane (east, north) metres
 const enu = (lon, lat) => [(lon - LON0) * KX, (lat - LAT0) * KY];
-// Grid frame: u = grid east, v = grid south
+// City axes: u = axis east, v = axis south. THETA is the bearing of +u, east of true north.
 function gridUV(lon, lat) {
   const [e, n] = enu(lon, lat);
   const c = Math.cos(THETA);
@@ -52,6 +55,7 @@ const toWorld = (lon, lat) => {
 // =====================================================================================================================
 // 2. GEOMETRY HELPERS
 // =====================================================================================================================
+const r1 = (x) => Math.round(x * 10) / 10;
 function ringArea(r) {
   let a = 0;
   for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += r[j][0] * r[i][1] - r[i][0] * r[j][1];
@@ -102,6 +106,15 @@ function rdpRing(ring, eps) {
   const a = rdp(ring.slice(i0, i1 + 1), eps);
   const b = rdp([...ring.slice(i1), ring[i0]], eps);
   return [...a.slice(0, -1), ...b.slice(0, -1)];
+}
+function pointInRing(x, z, r) {
+  let inside = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const [xi, zi] = r[i];
+    const [xj, zj] = r[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -272,12 +285,16 @@ class Raster {
 // =====================================================================================================================
 // 3. FRAME CALIBRATION FROM THE CENTERLINE
 // =====================================================================================================================
-const cscl = load('cscl_manhattan.json');
 function segLines(s) {
   const g = s.the_geom;
   if (!g) return [];
   return g.type === 'MultiLineString' ? g.coordinates : [g.coordinates];
 }
+const centroid = (r) => [r.reduce((t, p) => t + p[0], 0) / r.length, r.reduce((t, p) => t + p[1], 0) / r.length];
+let cscl = [];
+let geo;
+if (cityId === 'nyc') {
+cscl = load('cscl_manhattan.json');
 {
   // Bearing: length-weighted median direction of the long straight avenue segments
   const AVE = new Set(['1 AVE', '2 AVE', '3 AVE', 'LEXINGTON AVE', 'PARK AVE', 'MADISON AVE', '5 AVE', 'AVE OF THE AMERICAS', '7 AVE', '8 AVE',
@@ -329,7 +346,6 @@ for (const f of dcp.features) {
   rings.sort((a, b) => Math.abs(ringArea(b)) - Math.abs(ringArea(a)));
   boro[f.properties.boroname] = rings;
 }
-const centroid = (r) => [r.reduce((t, p) => t + p[0], 0) / r.length, r.reduce((t, p) => t + p[1], 0) / r.length];
 
 // OSM piers (closed ways & multipolygons) in world coordinates, with names
 const osmPiers = load('osm_piers.json');
@@ -373,6 +389,29 @@ manhattan = rdpRing(manhattan, 1.6);
 if (ringArea(manhattan) > 0) manhattan.reverse(); // same winding as the old MANHATTAN_COASTLINE (negative shoelace area in x, z)
 log(`Manhattan bulkhead ring: ${manhattan.length} pts, area ${(Math.abs(ringArea(manhattan)) / 1e6).toFixed(2)} km² (DCP ${(Math.abs(ringArea(mnRing)) / 1e6).toFixed(2)})`);
 
+// Shore profile: westernmost / easternmost land x at every 2 m of z (outer crossings of the ring)
+function shoreProfile(ring, step = 2) {
+  const bb = bbox(ring);
+  const z0 = Math.ceil(bb.z0 / step) * step;
+  const n = Math.floor((bb.z1 - z0) / step) + 1;
+  const west = new Float32Array(n), east = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    const z = z0 + k * step + 1e-3;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xa, za] = ring[j];
+      const [xb, zb] = ring[i];
+      if ((za > z) !== (zb > z)) {
+        const x = xa + ((z - za) * (xb - xa)) / (zb - za);
+        if (x < lo) lo = x;
+        if (x > hi) hi = x;
+      }
+    }
+    west[k] = lo;
+    east[k] = hi;
+  }
+  return { z0, step, west, east };
+}
 
 // --- Harbour islands (Manhattan borough parts) -----------------------------------------------------------------------
 function nearestPart(rings, x, z) {
@@ -430,6 +469,7 @@ function chainCoastline(osm) {
       if (!prev) break;
       seen.add(prev.id);
       first = prev;
+      if (prev.id === w.id) break;
     }
     const nodes = [];
     let cur = first;
@@ -447,5 +487,23 @@ const coastChains = chainCoastline(load('osm_coastline.json'));
 coastChains.sort((a, b) => b.length - a.length);
 log(`OSM coastline: ${coastChains.length} chains; longest ${coastChains.slice(0, 6).map((c) => c.length).join(', ')}`);
 
-const geo = { THETA, ORIGIN, manhattan, islands, boroughs, coastChains, pierPolys, mnRing };
-export { geo, toWorld, gridUV, rdp, rdpRing, ringArea, bbox, Raster, load, log, segLines, cscl, centroid };
+geo = { city: 'nyc', THETA, ORIGIN, manhattan, islands, boroughs, coastChains, pierPolys, mnRing, shoreProfile };
+} else if (cityId === 'hk') {
+  log(`Hong Kong frame: Central / Statue Square–Chater, LAT0=${LAT0}, LON0=${LON0}, true north. CSCL and DCP are not loaded.`);
+  geo = {
+    city: 'hk',
+    THETA,
+    ORIGIN,
+    bbox: HK_ISLAND_KOWLOON_BBOX,
+    manhattan: [],
+    islands: {},
+    boroughs: {},
+    coastChains: [],
+    pierPolys: [],
+    mnRing: [],
+    shoreProfile: null
+  };
+} else {
+  throw new Error(`Unhandled GEO_CITY ${cityId}`);
+}
+export { geo, toWorld, gridUV, rdp, rdpRing, ringArea, bbox, pointInRing, Raster, r1, load, log, segLines, cscl, centroid, cityId };
