@@ -23,6 +23,7 @@ import {
 } from './actor-models.js';
 import { PersonCrowd, PersonRig } from './pedestrians.js';
 import { HEADLIGHTS, createVehicleHeadlight, placeVehicleHeadlight } from './vehicle-lights.js';
+import { GEO } from './geo-source.js';
 
 // js/controllers.js
 // Sculpted, non-blocky GTA 6-style 3D models, animations, and physics controllers
@@ -74,7 +75,8 @@ function createTaxiDoorDecalTexture() {
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#ffbe14';
   ctx.fillRect(0, 0, 256, 128);
-  // Black T&LC circle emblem
+  const isHongKong = GEO.city === 'hk';
+  // Local taxi emblem: Hong Kong taxis use Chinese signage, not New York T&LC branding.
   ctx.fillStyle = '#111317';
   ctx.beginPath();
   ctx.arc(58, 64, 42, 0, Math.PI * 2);
@@ -83,16 +85,16 @@ function createTaxiDoorDecalTexture() {
   ctx.font = '900 32px Inter, Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('T', 58, 66);
-  // NYC TAXI typography & Fare Rate
+  ctx.fillText(isHongKong ? '的' : 'T', 58, 66);
+  // Taxi signage and fare label are localised to the active city.
   ctx.fillStyle = '#111317';
   ctx.textAlign = 'left';
-  ctx.font = '900 26px Inter, Arial, sans-serif';
-  ctx.fillText('NYC TAXI', 112, 42);
+  ctx.font = '900 26px Inter, "Noto Sans TC", Arial, sans-serif';
+  ctx.fillText(isHongKong ? '香港的士' : 'NYC TAXI', 112, 42);
   ctx.font = '700 15px JetBrains Mono, monospace';
-  ctx.fillText('7Y48 · MEDALLION', 112, 68);
-  ctx.font = '600 13px Inter, Arial, sans-serif';
-  ctx.fillText('$3.00 INITIAL FARE', 112, 90);
+  ctx.fillText(isHongKong ? '市區 TAXI' : '7Y48 · MEDALLION', 112, 68);
+  ctx.font = '600 13px Inter, "Noto Sans TC", Arial, sans-serif';
+  ctx.fillText(isHongKong ? '的士' : '$3.00 INITIAL FARE', 112, 90);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
