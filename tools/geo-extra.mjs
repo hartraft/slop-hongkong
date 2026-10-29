@@ -1,8 +1,12 @@
 // Part 4: parks (NYC Parks properties) onto the blocks, piers (OSM), East River bridges (CSCL), New Jersey (OSM
 // coastline), harbour islands, Upper Manhattan split
-import { geo, toWorld, rdp, rdpRing, ringArea, bbox, load, log, centroid } from './geo-base.mjs';
+import { geo, toWorld, rdp, rdpRing, ringArea, bbox, load, log, centroid, cityId } from './geo-base.mjs';
 import { pieces } from './geo-streets.mjs';
 import { blocks, blockRaster as R, blockLabels as lab, CUT_Z } from './geo-blocks.mjs';
+
+if (cityId !== 'nyc') {
+  throw new Error('tools/geo-extra.mjs is the Manhattan harbour stage (parks, piers, bridges, Upper Manhattan). GEO_CITY=hk uses tools/geo-hk-extra.mjs.');
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Parks
@@ -18,6 +22,7 @@ for (const p of parksRaw) {
 }
 // Coverage of every block by park land: scanline-fill each park ring over the block raster
 const W = R.w, H = R.h;
+const parkCells = new Float64Array(blocks.length + 1);
 // blocks don't carry their raster label: recover it from a point inside each block's lot rect or polygon
 for (const b of blocks) {
   const r = b.rects[0];

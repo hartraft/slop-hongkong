@@ -5,32 +5,48 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const read = (path) => readFileSync(join(__dirname, '..', path), 'utf8');
-let TELEPORT_LOCATIONS, LANDMARK_SITES, blockAt, nearestRoads, getIslandBoundsAtZ;
+let TELEPORT_LOCATIONS, blockAt, getIslandBoundsAtZ, getLocationLabel;
 test.before(async () => {
-  ({ TELEPORT_LOCATIONS, LANDMARK_SITES, blockAt, nearestRoads, getIslandBoundsAtZ } = await import('../js/city-config.js'));
+  ({ TELEPORT_LOCATIONS, blockAt, getIslandBoundsAtZ, getLocationLabel } = await import('../js/city-config.js'));
 });
 
-test('every teleport button has a destination on a real roadway inside Manhattan', () => {
-  const buttons = [...read('index.html').matchAll(/data-teleport="([^"]+)"/g)].map((match) => match[1]);
+test('Hong Kong teleports are Central, Tsim Sha Tsui, and Admiralty', () => {
+  const html = read('index.html');
+  const buttons = [...html.matchAll(/data-teleport="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(buttons.sort(), ['admiralty', 'central', 'tst']);
   assert.deepEqual(Object.keys(TELEPORT_LOCATIONS).sort(), buttons.sort());
+  assert.doesNotMatch(html, /data-teleport="empire"|data-teleport="owtc"|data-teleport="timessq"/);
+  assert.match(html, /中環/);
+  assert.match(html, /尖沙咀/);
+  assert.match(html, /金鐘/);
   for (const [name, point] of Object.entries(TELEPORT_LOCATIONS)) {
     assert.ok(Number.isFinite(point.heading), `${name} has a heading`);
     assert.equal(blockAt(point.x, point.z), null, `${name} lands outside building blocks`);
-    const shore = getIslandBoundsAtZ(point.z);
-    assert.ok(point.x > shore.westX + 8 && point.x < shore.eastX - 8, `${name} stays on the island`);
-    const nearby = nearestRoads(point.x, point.z, 20);
-    assert.ok(nearby.some(({ road, dist }) => dist < road.w / 2), `${name} lands within a street's width`);
+    const shore = getIslandBoundsAtZ(point.z, point.x);
+    assert.ok(point.x > shore.westX + 8 && point.x < shore.eastX - 8, `${name} stays on land`);
   }
+  const { central, tst, admiralty } = TELEPORT_LOCATIONS;
+  assert.ok(Math.hypot(central.x, central.z) < 30, 'Central is the Statue Square origin');
+  assert.ok(Math.abs(central.heading - Math.PI) < 1e-9, 'Central faces north, toward the harbour');
+  assert.equal(getLocationLabel(central.x, central.z).startsWith('中環'), true);
+  assert.ok(tst.z < -1400, 'Tsim Sha Tsui is north of Hong Kong Island');
+  assert.equal(tst.heading, 0, 'Tsim Sha Tsui faces south, toward the island');
+  assert.equal(getLocationLabel(tst.x, tst.z).startsWith('尖沙咀'), true);
+  const islandOnly = getIslandBoundsAtZ(tst.z);
+  const onKowloon = getIslandBoundsAtZ(tst.z, tst.x);
+  assert.ok(tst.x <= islandOnly.westX || tst.x >= islandOnly.eastX || onKowloon.westX !== islandOnly.westX, 'the clock tower is not clamped onto the island shore');
+  assert.ok(onKowloon.westX !== islandOnly.westX || onKowloon.eastX !== islandOnly.eastX);
+  assert.ok(admiralty.z > 0 && admiralty.x > 200, 'Admiralty is on the island, east of Central');
+  assert.ok(Math.abs(admiralty.heading - Math.PI) < 1e-9);
+  assert.equal(getLocationLabel(admiralty.x, admiralty.z).startsWith('金鐘'), true);
 });
 
-test('One World Trade Center arrives on Vesey Street facing the tower', () => {
-  const point = TELEPORT_LOCATIONS.owtc;
-  const tower = LANDMARK_SITES['One World Trade Center'];
-  assert.ok(nearestRoads(point.x, point.z, 20).some(({ road, dist }) => road.name === 'Vesey St' && dist < 1));
-  const distance = Math.hypot(tower.x - point.x, tower.z - point.z);
-  assert.ok(distance > 100 && distance < 220, 'leave space for the tower view');
-  const alignment = ((tower.x - point.x) * Math.sin(point.heading) + (tower.z - point.z) * Math.cos(point.heading)) / distance;
-  assert.ok(alignment > 0.999, 'face the tower rather than the neighboring buildings');
+test('Hong Kong boot builds landmarks from the Hong Kong catalog', () => {
+  const landmarks = read('js/landmarks.js');
+  const boot = landmarks.indexOf('function buildLandmarks');
+  assert.ok(boot > 0);
+  assert.match(landmarks.slice(boot), /return buildHkLandmarks\(scene, gltfPlan\)/);
+  assert.match(landmarks, /HongKongLandmarks/);
 });
 
 test('preset and map teleports share arrival resets and mark the resolved landing point', () => {
@@ -39,7 +55,7 @@ test('preset and map teleports share arrival resets and mark the resolved landin
   const end = main.indexOf('  const openMapBtn', start);
   const handlers = new Map();
   const calls = [];
-  const landed = { x: -305.7, z: 5210 };
+  const landed = { x: 0, z: 0 };
   let map;
   const environment = {
     TELEPORT_LOCATIONS,
@@ -53,7 +69,7 @@ test('preset and map teleports share arrival resets and mark the resolved landin
     getLocationLabel: (x, z) => `${x}, ${z}`,
     cityBlocks: { allBlocks: [] },
     trafficSystem: {},
-    NYCMapSystem: class {
+    HkMapSystem: class {
       constructor(options) { this.onTeleport = options.onTeleport; map = this; }
     },
     teleportButtons: Object.keys(TELEPORT_LOCATIONS).map((key) => ({
