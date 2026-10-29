@@ -397,6 +397,9 @@ function buildRoadNetwork(sidewalks, obstacles) {
         return { half, axis, fwd: l.dir > 0 ? lanes : [], back: l.dir < 0 ? lanes : [] };
       }
       const each = half >= 8.5 ? [1.8, 5.4] : [1.8];
+      // Hong Kong drives on the left: opposite directions must occupy opposite sides of the centreline.
+      // The NYC layout retains its existing offsets.
+      if (GEO.city === 'hk') return { half, axis, fwd: each.map((offset) => -offset), back: each };
       return { half, axis, fwd: each, back: each };
     }
     const DEG = Math.PI / 180;
