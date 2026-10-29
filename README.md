@@ -1,17 +1,31 @@
-# Slop New York
+# Slop Hong Kong
 
-A New York City simulation built with [three.js](https://threejs.org/), WebGPURenderer, and TSL. Explore Manhattan on foot, by car, by bicycle, or by helicopter.
+A Hong Kong-focused city simulation based on [Slop New York](https://github.com/mrdoob/slop-newyork), built with Three.js, WebGPURenderer, and TSL.
 
-[Try it live](https://mrdoob.github.io/slop-newyork/)
+**Status: conversion in progress.** This repository currently contains the upstream Manhattan implementation. It is not yet a playable Hong Kong map; the city geography, road network, building data, coastline, landmarks, and map labels must be replaced together rather than merely renaming the UI.
 
-## Make it your own
+## Target
 
-Fork it, remix it, improve it, break it. Make games, animations, films, experiments, or something completely different. Use it as a starting point and take it wherever you want. Have fun!
+The first playable slice will focus on **Causeway Bay and Wan Chai**, with an expansion path toward Central and across Victoria Harbour to Tsim Sha Tsui. The existing walking, driving, cycling, helicopter, camera, and time-of-day systems should be retained where practical.
 
-Explore other cities and community remixes in [Slop Cities](https://github.com/zz85/slop-cities).
+## Conversion plan
 
-## License and data
+1. Audit and isolate New York-specific geography and coordinate assumptions.
+2. Establish a reproducible Hong Kong geodata pipeline for roads, building footprints/heights, coastline, and terrain.
+3. Replace Manhattan geometry with a compact, correctly projected Hong Kong area.
+4. Add local landmarks and teleport destinations; adapt traffic and road markings for left-hand traffic.
+5. Update the HUD, maps, descriptions, and branding once they accurately represent the implemented area.
+6. Test in a WebGPU-capable browser and document data provenance and known limitations.
 
-The project code is available under the [MIT License](LICENSE).
+## Run locally
 
-Geographic data: NYC Open Data (including [building footprints and heights](https://data.cityofnewyork.us/City-Government/BUILDING/5zhs-2jue) and [tree locations](https://data.cityofnewyork.us/Environment/Forestry-Tree-Points/hn5i-inap)), [MTA subway entrances](https://data.ny.gov/Transportation/MTA-Subway-Entrances-and-Exits-2024/i9wp-a4ja), and © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL). Third-party data and dependencies retain their respective licenses.
+Serve the repository with a local static HTTP server and open it in a browser with WebGPU support. The project uses an import map to load Three.js modules from jsDelivr. Browser support and GPU capability affect whether the simulation starts successfully.
+
+## Code and data licensing
+
+The upstream project code is available under the [MIT License](LICENSE). Preserve upstream attribution and check the terms of each new dataset before redistribution. OpenStreetMap data is licensed under the [ODbL](https://www.openstreetmap.org/copyright) and requires attribution; any Hong Kong government or other geographic datasets may have separate terms.
+
+## Upstream
+
+- Original project: [mrdoob/slop-newyork](https://github.com/mrdoob/slop-newyork)
+- Community city remixes: [zz85/slop-cities](https://github.com/zz85/slop-cities)
